@@ -1,0 +1,9 @@
+# dsh-llm-proxy bundle patch: mounts the plugin into the profile's assembly
+# tree under the stable plugin id `dsh-llm-proxy`. On service start it swaps
+# the process-global undici dispatcher for a router: llmProxy hits go through
+# their configured proxy, everything else follows the env SYSTEM proxy
+# semantics (or connects directly with systemMode: off).
+
+- insert:
+    - id: dsh-llm-proxy
+      name: '@aiwayds/dsh-llm-proxy'
