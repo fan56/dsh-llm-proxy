@@ -116,6 +116,18 @@ test('withUndiciErrorListener swallows bare mid-stream error events', () => {
   assert.doesNotThrow(() => probe.emit('error', new Error('mid-stream abort')))
 })
 
+test('factory exit wraps the router with the undici error listener', () => {
+  const sysProbe = new Probe('system')
+  const router = createProxyRouterDispatcher(
+    [{ match: 'api.deepseek.org', proxy: 'http://127.0.0.1:7890' }],
+    { systemDispatcher: sysProbe, proxyFactory: () => new Probe('llm') },
+  )
+  // The router performs no I/O today, but it is an EventEmitter; a stray
+  // 'error' must never crash the host process.
+  assert.equal(router.listenerCount('error'), 1)
+  assert.doesNotThrow(() => router.emit('error', new Error('unexpected router error')))
+})
+
 test('default construction works without injected deps', async () => {
   const router = createProxyRouterDispatcher([{ match: 'direct.invalid', proxy: 'http://127.0.0.1:1' }])
   await assert.doesNotReject(() => router.close())

@@ -120,5 +120,8 @@ export function createProxyRouterDispatcher(
   entries: readonly LlmProxyEntry[],
   deps: RouterDeps = {},
 ): undici.Dispatcher {
-  return new ProxyRouterDispatcher(entries, deps)
+  // The router itself performs no I/O and currently emits no 'error', but it
+  // is an EventEmitter; attach the guard here so the factory exit always
+  // hands out a protected dispatcher even if that ever changes.
+  return withUndiciErrorListener(new ProxyRouterDispatcher(entries, deps))
 }
