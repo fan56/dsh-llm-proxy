@@ -33,10 +33,15 @@ dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里�
 （devDependencies 保留供本地构建）。请勿把它们挪进 dependencies——那会装出第二份
 cordis 闭包，导致双实例崩溃（详见 dsh 生态 link-dsh-closure 机制）。
 
-## 配置示例（settings.yaml）
+## 配置入口（settings.yaml 命名空间段）
+
+dsh 插件的用户配置唯一入口是 **settings.yaml 里按插件 id 命名的命名空间段**。本插件通过
+`@deepseek-ai/dsh-settings` 的 `installSettingsSection` 注册了 `dsh-llm-proxy` 命名空间
+（与 harness 内置插件 `llm-deepseek` 的 `llm-deepseek:` 段同机制），所以请在
+`~/.dsh/settings.yaml` 写：
 
 ```yaml
-llm-proxy:
+dsh-llm-proxy:
   enabled: true                    # 总开关，默认 true；false 时完全不动全局
   systemMode: env                  # 'env'（默认，读环境变量）| 'off'（全部直连，仅 llmProxy 生效）
   llmProxy:                        # 匹配列表，按顺序首条命中生效
@@ -48,6 +53,16 @@ llm-proxy:
       proxy: "http://127.0.0.1:7892"
 ```
 
+要点：
+
+- **顶层键必须是 `dsh-llm-proxy:`**（与插件 id 一致）。写其他键（如 `llm-proxy:`）不会
+  被读到，静默失效。
+- 编辑 settings.yaml **热生效**：settings provider 发布变更后，插件会拆掉旧 router、按新
+  配置重建，无需重启。
+- bundle entry config（`cordis.patch.yml` insert 行的 `config:`）作为 base 层仍然有效；
+  settings.yaml 段覆盖其上的同名键。
+- 未挂载 settings 服务的宿主自动回退到 entry config，插件照常工作。
+
 ### match 规则
 
 | 写法 | 含义 |
@@ -57,7 +72,9 @@ llm-proxy:
 | `*.example.com` | `example.com` 本身及任意层级子域 |
 | `https://api.example.com` | 完整 origin 精确匹配（scheme 也要一致） |
 
-匹配全部大小写不敏感、纯词法比较（无 DNS/IO）。实现为纯函数（`src/match.ts`），有完整单测。
+匹配全部大小写不敏感、纯词法比较（无 DNS/IO）。IDN 域名在匹配前统一归一化为 punycode
+（`中文.com` 与 `xn--fiq228c.com` 两种写法等价，pattern 和 origin 两侧对称处理）。
+实现为纯函数（`src/match.ts`），有完整单测。
 
 ### proxy 协议限制
 
@@ -72,12 +89,19 @@ undici `ProxyAgent` 只支持 **http:// 与 https://** 上游代理。
 - **照抄 pi-src 生产模板的防御细节**：
   - `undici.install?.()` 防 Node 内建 fetch 与 npm undici 版本偏斜 bug
     （Node 26 bundled fetch 经 npm undici dispatcher 不解压导致 `response.json()`
-    失败）；用 originalGlobalFetch 双守卫只在未被替换时 install。
+    失败）；用 pristine/owned 双守卫只在未被替换时 install。
   - undici Client 中途断流会发裸 `error` 事件导致 unhandled crash——对本插件创建的
     每个 dispatcher 挂 EventEmitter 级 error 兜底 listener（与 pi-src
     `http-dispatcher.ts` 同款机制，覆盖进程内所有由本插件创建的 dispatcher）。
-- dispose（cordis effect 语义）时恢复 original dispatcher/fetch，且只恢复自己仍持有的层
-  （HMR 重载叠层时不会打掉别人的路由器），并关闭自建的全部 dispatcher。
+- **HMR 重载窗口闭环**：接管状态（原始 dispatcher/fetch + 活跃层列表）存放在
+  `Symbol.for` 共享槽位，跨模块副本可见。cordis `Group.update` 先 create 后 remove、
+  vendor HMR 先 re-import 后 dispose——新版 apply 可能发生在旧版 dispose 之前；
+  dispose 只摘除自己那一层，把 globals 还给最近的存活层，绝不打掉别人的路由器。
+- dispose（cordis effect 语义）时**非阻塞拆除**：先把 globals 还回去（新请求立即不再
+  进入旧 router），再后台 fire-and-forget 地 `close()` 排空在途请求——长 LLM 流式响应
+  不会拖住热重载。
+- proxy URL 中可能出现的 userinfo 凭证（`user:pass@host`）在日志/error message 里一律
+  脱敏为 `***@host`。
 - 与 `NODE_USE_ENV_PROXY` 官方姿势的关系：本插件是等价替代——无需该变量、无需重启，
   对新请求即时生效，且额外提供 LLM 分流能力。
 
@@ -86,7 +110,7 @@ undici `ProxyAgent` 只支持 **http:// 与 https://** 上游代理。
 ```bash
 # 1. 配一个本地回显代理（如 clash/mihomo 的 mixed-port 7890）
 export HTTPS_PROXY=http://127.0.0.1:7890
-# 2. settings.yaml 配 llmProxy 把某个 API 域名指到另一端口
+# 2. settings.yaml 配 dsh-llm-proxy 段，把某个 API 域名指到另一端口
 # 3. 启动 dsh 后发起对话，观察代理访问日志：
 #    - llmProxy 命中域名的请求出现在该条代理日志里
 #    - 其他外网请求出现在 7890 日志里
@@ -98,5 +122,6 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 ```bash
 npm run build   # tsc -> lib/
 npm run check   # tsc --noEmit
-npm test        # node --test（23 个单测：match / router 探针分流 / config 边界 / dispose 对称性）
+npm test        # node --test（match / router 探针分流 / config 边界 / dispose 对称性 /
+                # e2e 全链路：apply → 全局 fetch 分流 → dispose 恢复 + HMR 窗口回归）
 ```
