@@ -12,6 +12,10 @@ function fakeCtx() {
     effect(factory, label) {
       factories.push({ factory, label })
     },
+    // cordis semantics: inject runs the callback once all named services are
+    // mounted. Tests run without any settings service, so it stays dormant
+    // and only the entry-config layer applies.
+    inject(_names, _callback) {},
   }
 }
 
@@ -85,18 +89,27 @@ test('a pre-existing fetch override is preserved and left alone', async () => {
   }
 })
 
-test('dispose closes the installed router even if globals moved on', async () => {
+test('dispose returns without draining in-flight requests; close finishes in background', async () => {
   const before = undici.getGlobalDispatcher()
   const ctx = fakeCtx()
   apply(ctx, {})
   const router = undici.getGlobalDispatcher()
-  let closed = false
-  const originalClose = router.close.bind(router)
-  router.close = async () => {
-    closed = true
-    return originalClose()
-  }
-  await disposeAll(ctx)
-  assert.equal(closed, true)
+
+  // Simulate an in-flight LLM stream: close() blocks until released.
+  let releaseClose
+  let closeCalled = false
+  router.close = () =>
+    new Promise((resolve) => {
+      closeCalled = true
+      releaseClose = resolve
+    })
+
+  const dispose = ctx.factories[0].factory()
+  await dispose() // must resolve immediately, not wait for the drain
+
+  assert.equal(closeCalled, true)
+  // Globals are handed back even though the router has not finished closing:
+  // nothing new can reach it, and hot reload never stalls behind the stream.
   assert.equal(undici.getGlobalDispatcher(), before)
+  releaseClose()
 })

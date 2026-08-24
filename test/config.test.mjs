@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { resolveConfig } from '../lib/index.js'
+import { redactProxyUrl, resolveConfig } from '../lib/index.js'
 
 test('defaults: enabled=true, systemMode=env, empty llmProxy', () => {
   const policy = resolveConfig(undefined)
@@ -38,5 +38,20 @@ test('socks proxies are rejected at startup with an explicit reason', () => {
   assert.throws(
     () => resolveConfig({ llmProxy: [{ match: '*.volces.com', proxy: 'socks5://127.0.0.1:1080' }] }),
     /SOCKS is not supported/,
+  )
+})
+
+test('proxy URLs with credentials are redacted for logs and error messages', () => {
+  assert.equal(redactProxyUrl('http://user:secret@127.0.0.1:7890'), 'http://***:***@127.0.0.1:7890')
+  assert.equal(redactProxyUrl('http://user@127.0.0.1:7890'), 'http://***@127.0.0.1:7890')
+  assert.equal(redactProxyUrl('http://127.0.0.1:7890'), 'http://127.0.0.1:7890')
+  // Unparsable input still gets a best-effort credential masking.
+  assert.equal(redactProxyUrl('not a url but user:pass@host'), 'not a url but ***@host')
+})
+
+test('validation errors never echo proxy credentials', () => {
+  assert.throws(
+    () => resolveConfig({ llmProxy: [{ match: 'a.com', proxy: 'socks5://user:hunter2@127.0.0.1:1080' }] }),
+    (error) => !String(error).includes('hunter2'),
   )
 })

@@ -11,6 +11,11 @@
  *
  * Priority: llmProxy hit > SYSTEM (env) > direct.
  *
+ * User configuration arrives exclusively through the `dsh-llm-proxy`
+ * settings.yaml namespace (registered via installSettingsSection, the same
+ * seam harness core plugins use); the bundle entry config is the base layer.
+ * Edits to the settings section hot-publish: the router is rebuilt in place.
+ *
  * Environment variables are only read, never written: mutating
  * process.env.HTTP_PROXY in an already-started process has no effect on
  * undici/Node internals and is deliberately avoided.
@@ -19,6 +24,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import * as undici from 'undici'
 import { createProxyRouterDispatcher, withUndiciErrorListener, type LlmProxyEntry } from './router.ts'
@@ -27,6 +33,13 @@ export { matchOrigin } from './match.ts'
 export { createProxyRouterDispatcher, resolveRoute, type LlmProxyEntry, type RouteDecision } from './router.ts'
 
 export const name = 'dsh-llm-proxy'
+
+/**
+ * The settings.yaml namespace this plugin owns. dsh feeds user configuration
+ * to plugins only through registered settings namespaces; the document
+ * section key that reaches this plugin is exactly this string.
+ */
+const SETTINGS_NAMESPACE = settingsNamespace('dsh-llm-proxy')
 
 /** Plugin configuration. */
 export interface Config {
@@ -54,19 +67,30 @@ export const Config = z.object({
 
 const CONFIG_KEYS: ReadonlySet<string> = new Set(['enabled', 'systemMode', 'llmProxy'])
 
-// Node 26's bundled fetch can consume compressed responses through npm
-// undici's dispatcher without decompressing them when the two implementations
-// skew. install() keeps fetch on the same undici copy as the dispatcher; the
-// guards ensure we only replace fetch that is still pristine (or still ours).
-const originalGlobalFetch = globalThis.fetch
-let installedGlobalFetch: typeof globalThis.fetch | undefined
+/**
+ * Mask the userinfo part of a proxy URL ("user:pass@host") so log lines and
+ * error messages never carry credentials.
+ */
+export function redactProxyUrl(proxyUrl: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(proxyUrl)
+  } catch {
+    // Unparsable input: best-effort masking of a credential-shaped token.
+    return proxyUrl.replace(/(^|\/\/|\s)[^\s@/]+@/, '$1***@')
+  }
+  if (!parsed.username && !parsed.password) return proxyUrl
+  const auth = parsed.password ? '***:***@' : '***@'
+  const path = parsed.pathname === '/' ? '' : parsed.pathname
+  return `${parsed.protocol}//${auth}${parsed.host}${path}${parsed.search}${parsed.hash}`
+}
 
 function validateProxyUrl(proxy: string, index: number): void {
   let parsed: URL
   try {
     parsed = new URL(proxy)
   } catch {
-    throw new Error(`dsh-llm-proxy: config.llmProxy[${index}].proxy is not a valid URL: "${proxy}"`)
+    throw new Error(`dsh-llm-proxy: config.llmProxy[${index}].proxy is not a valid URL: "${redactProxyUrl(proxy)}"`)
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new Error(
@@ -111,58 +135,195 @@ export function resolveConfig(config: Config | undefined): ResolvedConfig {
   return Object.freeze({ enabled, systemMode, llmProxy: Object.freeze(entries) })
 }
 
+// Node 26's bundled fetch can consume compressed responses through npm
+// undici's dispatcher without decompressing them when the two implementations
+// skew. Takeover keeps fetch on the same undici copy as the dispatcher; a
+// deliberate override by someone else must survive.
+//
+// Reload windows are the hazard. Cordis Group.update creates the new plugin
+// instance BEFORE removing the old one, and vendor HMR re-imports the module
+// before disposing it — so "new apply" can interleave with "old dispose", and
+// fresh module copies lose module-level bookkeeping. All ownership state
+// therefore lives in a Symbol.for-keyed slot shared across every module copy:
+// each live install records one layer; dispose pops its own layer and hands
+// the globals back to the nearest remaining layer (or the pristine values).
+interface GlobalsState {
+  /** Pristine dispatcher/fetch, captured once before the first-ever install. */
+  originalDispatcher: undici.Dispatcher | undefined
+  originalFetch: (typeof globalThis.fetch) | undefined
+  /** Live layers, bottom-first; each records what it put on the globals. */
+  layers: Array<{ router: undici.Dispatcher; fetch?: typeof globalThis.fetch }>
+}
+
+const GLOBALS_KEY = Symbol.for('dsh-llm-proxy.global-state')
+
+function globalsState(): GlobalsState {
+  const host = globalThis as Record<symbol, unknown>
+  return (host[GLOBALS_KEY] ??= {
+    originalDispatcher: undefined,
+    originalFetch: undefined,
+    layers: [],
+  }) as GlobalsState
+}
+
+/** Undo handle for one {@link takeoverGlobals} call. */
+interface GlobalLayer {
+  restore(): void
+}
+
 /**
- * Install the global routing dispatcher and register its teardown.
- * @param ctx - plugin context owning the dispose effect.
- * @param config - plugin configuration; omission selects defaults.
+ * Put `router` — and, when fetch is still pristine or still ours, npm
+ * undici's fetch — on top of the process globals, recording the layer so
+ * dispose can unwind exactly one level even under interleaved reloads.
  */
-export function apply(ctx: Context, config: Config = {}): void {
-  const policy = resolveConfig(config)
-  if (!policy.enabled) return
+function takeoverGlobals(router: undici.Dispatcher): GlobalLayer {
+  const state = globalsState()
+  state.originalDispatcher ??= undici.getGlobalDispatcher()
+  state.originalFetch ??= globalThis.fetch
 
-  const originalGlobalDispatcher = undici.getGlobalDispatcher()
-
-  // The shared fallback: EnvHttpProxyAgent reads the startup environment
-  // (HTTPS_PROXY / HTTP_PROXY / ALL_PROXY / NO_PROXY, upper or lower case)
-  // itself; "off" means everything unmatched connects directly.
-  const systemDispatcher =
-    policy.systemMode === 'env'
-      ? withUndiciErrorListener(new undici.EnvHttpProxyAgent())
-      : withUndiciErrorListener(new undici.Agent())
-
-  const router = createProxyRouterDispatcher(policy.llmProxy, {
-    systemDispatcher,
-    proxyFactory: (proxyUrl) => withUndiciErrorListener(new undici.ProxyAgent(proxyUrl)),
-  })
-
-  undici.setGlobalDispatcher(router)
-  // Only replace fetch if it is untouched (or still our own earlier install);
-  // a deliberate override by someone else must survive.
-  const shouldInstallGlobals =
-    installedGlobalFetch === undefined
-      ? globalThis.fetch === originalGlobalFetch
-      : globalThis.fetch === installedGlobalFetch
-  if (shouldInstallGlobals) {
+  // Take over fetch only when it is still pristine or still owned by the top
+  // layer; a deliberate override by someone else must survive untouched.
+  const under = state.layers[state.layers.length - 1]
+  let fetch: (typeof globalThis.fetch) | undefined
+  if (globalThis.fetch === (under?.fetch ?? state.originalFetch)) {
     undici.install?.()
-    installedGlobalFetch = globalThis.fetch
+    fetch = globalThis.fetch
   }
 
-  ctx.effect(() => async () => {
-    // Restore only layers this instance still owns: after HMR reload another
-    // router may already sit on top, and clobbering it would break that one.
-    if (undici.getGlobalDispatcher() === router) {
-      undici.setGlobalDispatcher(originalGlobalDispatcher)
+  const layer = { router, fetch }
+  state.layers.push(layer)
+  undici.setGlobalDispatcher(router)
+
+  return {
+    restore(): void {
+      const index = state.layers.lastIndexOf(layer)
+      if (index !== -1) state.layers.splice(index, 1)
+      // Restore only what this instance still owns: after an interleaved
+      // reload a newer router may sit on top, and clobbering it would break
+      // that one. Unwind hands control to the nearest live layer below, or
+      // back to the pristine values once no layer remains.
+      if (undici.getGlobalDispatcher() === router) {
+        const above = state.layers[state.layers.length - 1]
+        undici.setGlobalDispatcher(above?.router ?? state.originalDispatcher!)
+      }
+      if (fetch !== undefined && globalThis.fetch === fetch) {
+        const above = [...state.layers].reverse().find((candidate) => candidate.fetch !== undefined)
+        globalThis.fetch = above?.fetch ?? state.originalFetch!
+      }
+    },
+  }
+}
+
+/** Injectable seams for tests; production defaults build real undici agents. */
+export interface ApplyInternals {
+  /**
+   * Creates the shared system fallback; the default builds an
+   * EnvHttpProxyAgent for `env`, a direct Agent for `off`.
+   */
+  createSystemDispatcher?: (systemMode: 'env' | 'off') => undici.Dispatcher
+  /** Creates the per-proxy dispatcher; defaults to ProxyAgent. Overridable in tests. */
+  createProxyDispatcher?: (proxyUrl: string) => undici.Dispatcher
+}
+
+/** One live router installation owned by the plugin context. */
+interface ActiveLayer {
+  readonly router: undici.Dispatcher
+  readonly globals: GlobalLayer
+}
+
+/**
+ * Install the global routing dispatcher, wire the `dsh-llm-proxy` settings
+ * namespace, and register teardown.
+ * @param ctx - plugin context owning the dispose effect.
+ * @param config - composition entry config; the base layer under the
+ *   settings.yaml `dsh-llm-proxy` section.
+ * @param internals - injectable dispatcher factories for tests.
+ */
+export function apply(ctx: Context, config: Config = {}, internals: ApplyInternals = {}): void {
+  // Current authoritative config source: the entry until a settings scope
+  // layers the user's settings.yaml section on top (and back to the entry if
+  // the settings provider detaches). The seam hands over a thunk so every
+  // rejudge reads the live layered value instead of a stale snapshot.
+  let getSource: () => Config = () => config
+  let active: ActiveLayer | undefined
+  let effectRegistered = false
+
+  function installLayer(policy: ResolvedConfig): ActiveLayer {
+    const systemDispatcher =
+      internals.createSystemDispatcher?.(policy.systemMode)
+      ?? withUndiciErrorListener(
+        policy.systemMode === 'env' ? new undici.EnvHttpProxyAgent() : new undici.Agent(),
+      )
+    const router = createProxyRouterDispatcher(policy.llmProxy, {
+      systemDispatcher,
+      proxyFactory: internals.createProxyDispatcher
+        ?? ((proxyUrl) => withUndiciErrorListener(new undici.ProxyAgent(proxyUrl))),
+    })
+    return { router, globals: takeoverGlobals(router) }
+  }
+
+  function teardownLayer(layer: ActiveLayer): void {
+    layer.globals.restore()
+    // Non-blocking teardown: close() waits for in-flight requests to drain,
+    // which would stall hot reloads behind long LLM streams. The globals are
+    // already handed back above, so no new request reaches this router; let
+    // it finish draining and closing in the background instead of awaiting.
+    void layer.router.close().catch(() => {})
+  }
+
+  const ensureDisposeEffect = (): void => {
+    if (effectRegistered) return
+    effectRegistered = true
+    ctx.effect(() => async () => {
+      const current = active
+      active = undefined
+      if (current) teardownLayer(current)
+    }, 'dsh-llm-proxy: restore global dispatcher/fetch and close proxies')
+  }
+
+  const rejudge = (failFast: boolean): void => {
+    let policy: ResolvedConfig
+    try {
+      policy = resolveConfig(getSource())
+    } catch (error) {
+      if (failFast) throw error
+      ctx.logger?.error(
+        'dsh-llm-proxy: ignoring invalid settings update, keeping current routing: %s',
+        error instanceof Error ? error.message : String(error),
+      )
+      return
     }
-    if (
-      installedGlobalFetch !== undefined
-      && globalThis.fetch === installedGlobalFetch
-      && installedGlobalFetch !== originalGlobalFetch
-    ) {
-      globalThis.fetch = originalGlobalFetch
-      installedGlobalFetch = undefined
+    if (!policy.enabled) {
+      const current = active
+      active = undefined
+      if (current) teardownLayer(current)
+      return
     }
-    // The router owns the fallback and every lazily created ProxyAgent;
-    // closing it tears down all of them.
-    await Promise.allSettled([router.close()])
-  }, 'dsh-llm-proxy: restore global dispatcher/fetch and close proxies')
+    let next: ActiveLayer
+    try {
+      next = installLayer(policy)
+    } catch (error) {
+      if (failFast) throw error
+      ctx.logger?.error(
+        'dsh-llm-proxy: failed to rebuild routing, keeping current routing: %o',
+        error,
+      )
+      return
+    }
+    const previous = active
+    active = next
+    ensureDisposeEffect()
+    if (previous) teardownLayer(previous)
+  }
+
+  // Start immediately with the entry config so the plugin works even on hosts
+  // that never mount a settings service; when the service appears, the
+  // layered section takes over and subsequent edits hot-publish here.
+  rejudge(true)
+  installSettingsSection(ctx, SETTINGS_NAMESPACE, Config, config, {
+    setSource: (current) => {
+      getSource = current
+    },
+    onChange: () => rejudge(false),
+  })
 }
