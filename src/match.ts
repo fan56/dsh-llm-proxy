@@ -11,12 +11,41 @@
  *   origin's port (scheme defaults count: https=443, http=80).
  *
  * All comparisons are lowercase; matching is purely lexical — no DNS, no I/O.
+ * Hostnames are normalized the way WHATWG URL parsing normalizes request
+ * origins: lowercase ASCII with IDN labels converted to punycode, so a
+ * pattern and an origin written in either the unicode or the xn-- form of
+ * the same domain compare equal.
  */
 
 const DEFAULT_PORTS: ReadonlyMap<string, string> = new Map([
   ['https:', '443'],
   ['http:', '80'],
 ])
+
+/**
+ * Canonical origin of a full-origin URL: lowercase scheme/host with IDN
+ * labels punycoded; `undefined` when the value does not parse.
+ */
+function canonicalOrigin(value: string): string | undefined {
+  try {
+    return new URL(value).origin
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Normalize a bare hostname (no port, no scheme) the way WHATWG URL parsing
+ * would for a request origin: lowercase ASCII, IDN labels to punycode.
+ * Falls back to plain lowercasing when the value cannot be parsed.
+ */
+function normalizeHost(host: string): string {
+  try {
+    return new URL(`http://${host}`).hostname
+  } catch {
+    return host.toLowerCase()
+  }
+}
 
 interface AuthorityParts {
   readonly host: string
@@ -51,15 +80,18 @@ function hostMatches(pattern: string, host: string): boolean {
 export function matchOrigin(match: string, origin: string): boolean {
   const normalizedMatch = match.trim().toLowerCase()
   if (!normalizedMatch) return false
+  const trimmedOrigin = origin.trim()
 
   if (normalizedMatch.includes('://')) {
-    const normalizedOrigin = origin.trim().toLowerCase()
-    return normalizedOrigin === normalizedMatch
+    // Full-origin form: compare canonical origins, so scheme/host casing and
+    // punycode vs unicode IDN spellings do not affect the outcome.
+    const patternOrigin = canonicalOrigin(normalizedMatch)
+    return patternOrigin !== undefined && patternOrigin === canonicalOrigin(trimmedOrigin)
   }
 
   let parsed: URL
   try {
-    parsed = new URL(origin.includes('://') ? origin.trim() : `http://${origin.trim()}`)
+    parsed = new URL(trimmedOrigin.includes('://') ? trimmedOrigin : `http://${trimmedOrigin}`)
   } catch {
     return false
   }
@@ -69,5 +101,7 @@ export function matchOrigin(match: string, origin: string): boolean {
     const actualPort = parsed.port || DEFAULT_PORTS.get(parsed.protocol) || ''
     if (patternPort !== actualPort) return false
   }
-  return hostMatches(patternHost, parsed.hostname)
+  // parsed.hostname is already punycode-normalized by URL parsing; normalize
+  // the pattern host the same way so both sides compare symmetrically.
+  return hostMatches(normalizeHost(patternHost), parsed.hostname)
 }

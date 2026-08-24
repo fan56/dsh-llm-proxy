@@ -46,3 +46,22 @@ test('no hit on empty or malformed inputs', () => {
   assert.equal(matchOrigin('api.example.com', ''), false)
   assert.equal(matchOrigin('api.example.com', 'not a url %%%'), false)
 })
+
+test('IDN hosts match across punycode and unicode spellings (host patterns)', () => {
+  // Pattern punycode, origin unicode — and the mirror image.
+  assert.equal(matchOrigin('xn--fiq228c.com', 'https://中文.com'), true)
+  assert.equal(matchOrigin('中文.com', 'https://xn--fiq228c.com'), true)
+  assert.equal(matchOrigin('XN--FIQ228C.COM', 'https://中文.com'), true)
+  // Wildcard over an IDN base in either spelling.
+  assert.equal(matchOrigin('*.xn--r8jz45g.jp', 'https://a.例え.jp'), true)
+  assert.equal(matchOrigin('*.例え.jp', 'https://xn--r8jz45g.jp'), true)
+  // Different domains still never match.
+  assert.equal(matchOrigin('xn--fiq228c.com', 'https://example.com'), false)
+})
+
+test('IDN hosts match across punycode and unicode spellings (full-origin patterns)', () => {
+  assert.equal(matchOrigin('https://xn--fiq228c.com', 'https://中文.com'), true)
+  assert.equal(matchOrigin('https://中文.com', 'https://xn--fiq228c.com'), true)
+  assert.equal(matchOrigin('HTTPS://中文.com:8443', 'https://xn--fiq228c.com:8443'), true)
+  assert.equal(matchOrigin('https://xn--fiq228c.com', 'http://中文.com'), false)
+})
