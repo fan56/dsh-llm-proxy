@@ -14,7 +14,9 @@
  * User configuration arrives exclusively through the `dsh-llm-proxy`
  * settings.yaml namespace (registered via installSettingsSection, the same
  * seam harness core plugins use); the bundle entry config is the base layer.
- * Edits to the settings section hot-publish: the router is rebuilt in place.
+ * Edits to the settings section hot-publish: the router is rebuilt in place,
+ * unless the resolved values are unchanged, in which case the rebuild is
+ * skipped (the settings attach itself fires one redundant onChange).
  *
  * Environment variables are only read, never written: mutating
  * process.env.HTTP_PROXY in an already-started process has no effect on
@@ -24,7 +26,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import * as undici from 'undici'
 import { createProxyRouterDispatcher, withUndiciErrorListener, type LlmProxyEntry } from './router.ts'
@@ -246,6 +248,7 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
   // rejudge reads the live layered value instead of a stale snapshot.
   let getSource: () => Config = () => config
   let active: ActiveLayer | undefined
+  let activePolicy: ResolvedConfig | undefined
   let effectRegistered = false
 
   function installLayer(policy: ResolvedConfig): ActiveLayer {
@@ -293,9 +296,15 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
       )
       return
     }
+    // Attaching the settings scope fires onChange unconditionally, even when
+    // the layered section resolves to the same values as the entry base
+    // layer; rebuilding then would tear down and reinstall an identical
+    // router for nothing. Skip when no resolved value changed.
+    if (activePolicy !== undefined && deepEqualJson(policy, activePolicy)) return
     if (!policy.enabled) {
       const current = active
       active = undefined
+      activePolicy = policy
       if (current) teardownLayer(current)
       return
     }
@@ -312,6 +321,7 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
     }
     const previous = active
     active = next
+    activePolicy = policy
     ensureDisposeEffect()
     if (previous) teardownLayer(previous)
   }

@@ -257,6 +257,42 @@ test('settings.yaml section layers over the entry config and hot-publishes edits
   assert.equal(globalThis.fetch, pristineFetch)
 })
 
+test('settings attach with unchanged values skips the rebuild', async () => {
+  const pristineDispatcher = undici.getGlobalDispatcher()
+  const pristineFetch = globalThis.fetch
+  let builds = 0
+  const ctx = fakeCtx()
+  apply(
+    ctx,
+    { llmProxy: [{ match: 'same.example.com', proxy: 'http://127.0.0.1:7890' }] },
+    {
+      createSystemDispatcher: () => {
+        builds++
+        return new Probe(`sys#${builds}`)
+      },
+      createProxyDispatcher: () => new Probe('llm'),
+    },
+  )
+  const routerV1 = undici.getGlobalDispatcher()
+  assert.equal(builds, 1)
+
+  // Attaching the settings scope fires onChange even though the layered
+  // section resolves to exactly the entry base layer; the identical resolved
+  // policy must not tear down and reinstall the router.
+  ctx.publishSection({ llmProxy: [{ match: 'same.example.com', proxy: 'http://127.0.0.1:7890' }] })
+  assert.equal(builds, 1, 'unchanged resolved policy must skip the rebuild')
+  assert.equal(undici.getGlobalDispatcher(), routerV1, 'the live router must stay in place')
+
+  // A real value change still rebuilds.
+  ctx.publishSection({ llmProxy: [{ match: 'other.example.com', proxy: 'http://127.0.0.1:7891' }] })
+  assert.equal(builds, 2)
+  assert.notEqual(undici.getGlobalDispatcher(), routerV1)
+
+  await disposeAll(ctx)
+  assert.equal(undici.getGlobalDispatcher(), pristineDispatcher)
+  assert.equal(globalThis.fetch, pristineFetch)
+})
+
 test('enabled=false through settings disables routing; flipping back restores it', async () => {
   const pristineDispatcher = undici.getGlobalDispatcher()
   const pristineFetch = globalThis.fetch
