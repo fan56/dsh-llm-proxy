@@ -40,9 +40,15 @@ class Probe extends undici.Dispatcher {
 }
 
 // Minimal cordis-like context that also emulates the dsh settings seam:
-// inject(['settings']) runs immediately, register() layers the stored user
-// section over the entry config, and publishing a section edit replays it
+// inject(['settings']) runs immediately, installSection() layers the stored
+// user section over the entry config, and publishing a section edit replays it
 // through the scope watcher (the same hook the real provider fires).
+//
+// The mock's installSection mirrors the body of dsh-settings
+// 0.1.2-alpha.3's SettingsProvider.installSection (the method the plugin now
+// delegates to): register-equivalent base layering, setSource before the
+// attach onChange, a detach effect that falls back to the entry config, and a
+// resolved-value watcher — each guarded by the fiber unload check.
 function fakeCtx() {
   const factories = []
   const watchers = []
@@ -50,8 +56,11 @@ function fakeCtx() {
     factories,
     watchers,
     stored: undefined,
-    // cordis fiber state mirror: anything below UNLOADING(5)/DISPOSED(4)
-    // counts as "still loaded" for the settings helper's unload guards.
+    // cordis fiber state mirror: anything at UNLOADING(5)/DISPOSED(4) or past
+    // counts as "unloading" for installSection's fallback guards.
+    get unloading() {
+      return this.fiber.state >= 4
+    },
     fiber: { state: 0 },
     effect(factory, label) {
       factories.push({ factory, label })
@@ -61,11 +70,22 @@ function fakeCtx() {
       callback({
         effect: (factory, label) => ctx.effect(factory, label),
         settings: {
-          register(_ns, _schema, options) {
-            return {
-              get: () => ({ ...options.base, ...ctx.stored }),
+          installSection(_owner, _ns, _schema, entry, hooks) {
+            const scope = {
+              get: () => ({ ...entry, ...ctx.stored }),
               watch: (cb) => watchers.push(cb),
             }
+            hooks.setSource(() => scope.get())
+            ctx.effect(() => () => {
+              if (ctx.unloading) return
+              hooks.setSource(() => entry)
+              hooks.onChange()
+            })
+            hooks.onChange()
+            scope.watch(() => {
+              if (ctx.unloading) return
+              hooks.onChange()
+            })
           },
         },
       })

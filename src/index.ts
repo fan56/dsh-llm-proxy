@@ -15,8 +15,9 @@
  * carries the plugin's configuration and troubleshooting guide.
  *
  * User configuration arrives exclusively through the `dsh-llm-proxy`
- * settings.yaml namespace (registered via installSettingsSection, the same
- * seam harness core plugins use); the bundle entry config is the base layer.
+ * settings.yaml namespace (registered via the settings provider's
+ * installSection, the same seam harness core plugins use); the bundle entry
+ * config is the base layer.
  * Edits to the settings section hot-publish: the router is rebuilt in place,
  * unless the resolved values are unchanged, in which case the rebuild is
  * skipped (the settings attach itself fires one redundant onChange).
@@ -31,7 +32,14 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only side-effect import: loads dsh-settings' `declare module
+// '@deepseek-ai/cordis'` augmentation, which is what puts `ctx.settings` on
+// the Context type. There is no runtime import — the host provides the
+// settings service; alpha.3 removed the module-level settingsNamespace(),
+// installSettingsSection(), and deepEqualJson() helpers this plugin used to
+// import (see SETTINGS_NAMESPACE below, the installSection call in apply(),
+// and ./deep-equal.ts for their replacements).
+import type {} from '@deepseek-ai/dsh-settings'
 import {
   BUNDLED_SKILL_RANK,
   type SkillCandidate,
@@ -40,6 +48,7 @@ import {
 } from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import * as undici from 'undici'
+import { deepEqualJson } from './deep-equal.ts'
 import { createProxyRouterDispatcher, withUndiciErrorListener, type LlmProxyEntry } from './router.ts'
 
 export { matchOrigin } from './match.ts'
@@ -54,8 +63,14 @@ export const inject = ['skills']
  * The settings.yaml namespace this plugin owns. dsh feeds user configuration
  * to plugins only through registered settings namespaces; the document
  * section key that reaches this plugin is exactly this string.
+ *
+ * A plain literal is the supported spelling since dsh-settings
+ * 0.1.2-alpha.3: `register`/`installSection` brand-check the namespace at the
+ * type level (`SettingsNamespaceInput`) and validate the same pattern at
+ * runtime (`parseSettingsNamespace`), replacing the removed
+ * `settingsNamespace()` helper.
  */
-const SETTINGS_NAMESPACE = settingsNamespace('dsh-llm-proxy')
+const SETTINGS_NAMESPACE = 'dsh-llm-proxy'
 
 /** Plugin configuration. */
 export interface Config {
@@ -420,10 +435,19 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
   // that never mount a settings service; when the service appears, the
   // layered section takes over and subsequent edits hot-publish here.
   rejudge(true)
-  installSettingsSection(ctx, SETTINGS_NAMESPACE, Config, config, {
-    setSource: (current) => {
-      getSource = current
-    },
-    onChange: () => rejudge(false),
+  // Optional-settings consumer wiring. The rc.2 module-level
+  // installSettingsSection() helper was removed in dsh-settings
+  // 0.1.2-alpha.3; the attach / detach-fallback / watch body moved behind the
+  // provider as SettingsProvider.installSection (identical semantics — the
+  // entry config stays the fallback source when the provider detaches).
+  // ctx.inject keeps the whole wiring dormant on hosts that never mount a
+  // settings service.
+  ctx.inject(['settings'], (sctx) => {
+    sctx.settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
+      setSource: (current) => {
+        getSource = current
+      },
+      onChange: () => rejudge(false),
+    })
   })
 }
