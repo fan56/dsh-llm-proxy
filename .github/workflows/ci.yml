@@ -1,10 +1,25 @@
-# CI: typecheck + tests on every push to main and every pull request.
+# CI: typecheck + tests + a real-host boot smoke on every push to main, every
+# pull request, and a daily schedule.
+#
+# The @deepseek-ai/* packages are typechecked against the closure of a real
+# dsh install, not just the registry devDependency pins: CI installs the dsh
+# CLI (alpha line, the one this plugin targets) and re-points every
+# node_modules/@deepseek-ai entry at its closure (scripts/link-dsh-closure.mjs)
+# before running tsc — so upstream drift fails the gate here instead of
+# surfacing as a broken plugin on user machines.
+#
+# The smoke boots a scratch profile with the plugin mounted via the real dsh
+# CLI (scripts/smoke-boot.mjs) so "loads under real cordis, registers the
+# settings namespace, and serves the bundled skill" is a gate, not a hope.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Daily 03:23 UTC — catches upstream dsh alpha drift without hand-pinning.
+    - cron: '23 3 * * *'
 
 permissions:
   contents: read
@@ -15,7 +30,7 @@ concurrency:
 
 jobs:
   test:
-    name: Check & Test
+    name: Check, Test & Boot-Smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -32,8 +47,20 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Install dsh CLI (alpha line — the host this plugin targets)
+        run: npm install -g @deepseek-ai/dsh@alpha --no-audit --no-fund
+
+      # Re-point every @deepseek-ai/* entry at the installed host's closure so
+      # typecheck judges the code that actually runs inside dsh. No-op (exit 0)
+      # when no global dsh is found, so a registry-only checkout still checks.
+      - name: Link @deepseek-ai/* to the dsh closure
+        run: node scripts/link-dsh-closure.mjs
+
       - name: Check
         run: npm run check --if-present
 
       - name: Test
         run: npm test
+
+      - name: Boot smoke (real dsh host, scratch profile)
+        run: node scripts/smoke-boot.mjs
