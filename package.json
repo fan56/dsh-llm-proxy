@@ -42,8 +42,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/schemastery": "3.18.2",
-    "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.3",
-    "@deepseek-ai/dsh-skill": ">=0.1.2-alpha.3"
+    "@deepseek-ai/dsh-settings": ">=0.1.2-alpha.4",
+    "@deepseek-ai/dsh-skill": ">=0.1.2-alpha.4"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -59,8 +59,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/schemastery": "3.18.2",
-    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
-    "@deepseek-ai/dsh-skill": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.4",
+    "@deepseek-ai/dsh-skill": "0.1.2-alpha.4",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   },

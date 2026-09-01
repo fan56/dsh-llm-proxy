@@ -65,7 +65,7 @@ cordis 闭包，导致双实例崩溃（详见 dsh 生态 link-dsh-closure 机�
 ## 配置入口（settings.yaml 命名空间段）
 
 dsh 插件的用户配置唯一入口是 **settings.yaml 里按插件 id 命名的命名空间段**。本插件通过
-`@deepseek-ai/dsh-settings`（要求 `>=0.1.2-alpha.3`）settings provider 的
+`@deepseek-ai/dsh-settings`（要求 `>=0.1.2-alpha.4`）settings provider 的
 `installSection` 注册了 `dsh-llm-proxy` 命名空间
 （与 harness 内置插件 `llm-deepseek` 的 `llm-deepseek:` 段同机制），所以请在
 `~/.dsh/settings.yaml` 写：
