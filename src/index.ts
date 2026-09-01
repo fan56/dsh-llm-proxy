@@ -11,6 +11,9 @@
  *
  * Priority: llmProxy hit > SYSTEM (env) > direct.
  *
+ * apply() also registers a bundled skill (skills/dsh-llm-proxy/SKILL.md) that
+ * carries the plugin's configuration and troubleshooting guide.
+ *
  * User configuration arrives exclusively through the `dsh-llm-proxy`
  * settings.yaml namespace (registered via installSettingsSection, the same
  * seam harness core plugins use); the bundle entry config is the base layer.
@@ -25,8 +28,16 @@
  * @module @aiwayds/dsh-llm-proxy
  */
 
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import {
+  BUNDLED_SKILL_RANK,
+  type SkillCandidate,
+  type SkillDefinition,
+  type SkillProvider,
+} from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import * as undici from 'undici'
 import { createProxyRouterDispatcher, withUndiciErrorListener, type LlmProxyEntry } from './router.ts'
@@ -35,6 +46,9 @@ export { matchOrigin } from './match.ts'
 export { createProxyRouterDispatcher, resolveRoute, type LlmProxyEntry, type RouteDecision } from './router.ts'
 
 export const name = 'dsh-llm-proxy'
+
+/** Service required by the bundled skill provider. */
+export const inject = ['skills']
 
 /**
  * The settings.yaml namespace this plugin owns. dsh feeds user configuration
@@ -233,15 +247,91 @@ interface ActiveLayer {
   readonly globals: GlobalLayer
 }
 
+// --- Bundled skill -----------------------------------------------------------
+
+/** Provider name under `ctx.skills`; doubles as the skill name. */
+const SKILL_PROVIDER_NAME = 'dsh-llm-proxy'
+
+/** Packaged skill body; `../skills/` resolves to the package root from both lib/ and src/. */
+const SKILL_BODY_URL = new URL('../skills/dsh-llm-proxy/SKILL.md', import.meta.url)
+
+/** Resource base served with the skill so its relative links resolve. */
+const SKILL_RESOURCE_BASE = {
+  kind: 'directory',
+  path: fileURLToPath(new URL('../skills/dsh-llm-proxy/', import.meta.url)),
+} as const
+
+const SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const
+
+/** Routing description; must stay identical to the SKILL.md frontmatter (asserted in tests). */
+const SKILL_DESCRIPTION = 'dsh 出站代理 / LLM 分流插件（@aiwayds/dsh-llm-proxy）使用指南。凡给 dsh 插件配置 HTTP 代理、LLM 出站分流，或排查代理网络问题时先读本指南：settings.yaml 顶层 `dsh-llm-proxy:` 段（enabled/systemMode/llmProxy）、llmProxy match 规则、代理 407、CONNECT 挂起、socks5 报错（SOCKS 不支持）、NODE_USE_ENV_PROXY 等价替代。触发词：dsh 代理、HTTP 代理、LLM 分流、llmProxy、llm-proxy、407、CONNECT 挂起、SOCKS、HTTPS_PROXY、NO_PROXY、出站代理、NODE_USE_ENV_PROXY。'
+
+const SKILL_CANDIDATE: SkillCandidate = {
+  name: SKILL_PROVIDER_NAME,
+  description: SKILL_DESCRIPTION,
+  invocation: SKILL_INVOCATION,
+  provider: SKILL_PROVIDER_NAME,
+  source: 'bundled',
+  resourceBase: SKILL_RESOURCE_BASE,
+  rank: BUNDLED_SKILL_RANK,
+  locator: SKILL_BODY_URL,
+}
+
+const skillProvider: SkillProvider = {
+  name: SKILL_PROVIDER_NAME,
+  list: () => Promise.resolve([SKILL_CANDIDATE]),
+  async get(_candidate): Promise<SkillDefinition> {
+    return {
+      name: SKILL_CANDIDATE.name,
+      description: SKILL_CANDIDATE.description,
+      invocation: SKILL_CANDIDATE.invocation,
+      provider: SKILL_CANDIDATE.provider,
+      source: SKILL_CANDIDATE.source,
+      resourceBase: SKILL_RESOURCE_BASE,
+      content: stripFrontmatter(await readFile(SKILL_BODY_URL, 'utf8')),
+    }
+  },
+}
+
+/**
+ * Strip a leading YAML frontmatter block (`---` / body / `---`) from a skill
+ * markdown file. `SkillDefinition.content` must be the instruction body after
+ * metadata removal — the same shape the filesystem provider serves — so the
+ * bundled SKILL.md, which keeps its frontmatter for the GitHub/manual install
+ * paths, has the block removed when served through {@link skillProvider.get}.
+ * Tolerant by design: input that does not open with a `---` line, or whose
+ * frontmatter block is never closed, is returned unchanged. Mirrors the
+ * delimiter semantics of the upstream skill-filesystem provider.
+ */
+export function stripFrontmatter(raw: string): string {
+  const firstLineEnd = raw.indexOf('\n')
+  if (firstLineEnd < 0 || raw.slice(0, firstLineEnd).replace(/\r$/, '') !== '---') return raw
+  let lineStart = firstLineEnd + 1
+  while (lineStart <= raw.length) {
+    const nextNewline = raw.indexOf('\n', lineStart)
+    const lineEnd = nextNewline < 0 ? raw.length : nextNewline
+    if (raw.slice(lineStart, lineEnd).replace(/\r$/, '') === '---') {
+      return raw.slice(nextNewline < 0 ? raw.length : nextNewline + 1).trim()
+    }
+    if (nextNewline < 0) return raw
+    lineStart = nextNewline + 1
+  }
+  return raw
+}
+
 /**
  * Install the global routing dispatcher, wire the `dsh-llm-proxy` settings
- * namespace, and register teardown.
+ * namespace, register the bundled skill provider, and register teardown.
  * @param ctx - plugin context owning the dispose effect.
  * @param config - composition entry config; the base layer under the
  *   settings.yaml `dsh-llm-proxy` section.
  * @param internals - injectable dispatcher factories for tests.
  */
 export function apply(ctx: Context, config: Config = {}, internals: ApplyInternals = {}): void {
+  // `inject = ['skills']` guarantees the service exists on every real host;
+  // register unconditionally so a missing service fails loud instead of
+  // silently dropping the bundled skill.
+  ctx.skills.registerProvider(() => skillProvider)
   // Current authoritative config source: the entry until a settings scope
   // layers the user's settings.yaml section on top (and back to the entry if
   // the settings provider detaches). The seam hands over a thunk so every

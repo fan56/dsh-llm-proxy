@@ -29,6 +29,35 @@ dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里�
 #     name: '@aiwayds/dsh-llm-proxy'
 ```
 
+> ⚠️ 最低宿主要求：0.2.0 起本插件声明 `inject: ['skills']`，要求宿主 dsh 提供 skills
+> 服务（`@deepseek-ai/dsh-skill` 0.1.1-rc 系列+）。无该服务的旧宿主上，本插件（含代理
+> 路由功能）不会加载。
+
+> 发布状态：本包已发布到 npm（0.2.0，自带内置 skill），方式一
+> `dsh plugin add @aiwayds/dsh-llm-proxy` 即可直接用。
+
+## Skill（内置使用指南）
+
+本仓库自带一个 dsh skill（`skills/dsh-llm-proxy/SKILL.md`）：面向 agent 的配置 + 排障
+使用指南，frontmatter `description` 内嵌触发词（dsh 代理、HTTP 代理、LLM 分流、llmProxy、
+407、CONNECT 挂起、SOCKS、NODE_USE_ENV_PROXY 等），进入每会话模型目录用于路由。三种获取方式：
+
+1. **随插件自动注册（零操作）**：通过 npm 包或 bundle（cordis.patch.yml）挂载本插件后，
+   skill 随插件 `apply()` 自动注册——进入每会话 skill 目录（`<available_skills>`，
+   frontmatter `description` 供模型路由），`/dsh-llm-proxy` 手势可直接调出指南（已实测可用）。
+2. **GitHub 安装（不装插件，只要 skill）**：
+
+   ```bash
+   npx skills add fan56/dsh-llm-proxy   # 安装到 ~/.agents/skills/
+   ```
+
+3. **手动**：`git clone` 本仓库后，把 `skills/dsh-llm-proxy/` 拷贝或软链到 `~/.dsh/skills/`：
+
+   ```bash
+   git clone https://github.com/fan56/dsh-llm-proxy.git
+   ln -s "$(pwd)/dsh-llm-proxy/skills/dsh-llm-proxy" ~/.dsh/skills/dsh-llm-proxy
+   ```
+
 ⚠️ 铁律：本包的 `@deepseek-ai/*` 只声明在 **peerDependencies**
 （devDependencies 保留供本地构建）。请勿把它们挪进 dependencies——那会装出第二份
 cordis 闭包，导致双实例崩溃（详见 dsh 生态 link-dsh-closure 机制）。
@@ -122,6 +151,6 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 ```bash
 npm run build   # tsc -> lib/
 npm run check   # tsc --noEmit
-npm test        # node --test（match / router 探针分流 / config 边界 / dispose 对称性 /
-                # e2e 全链路：apply → 全局 fetch 分流 → dispose 恢复 + HMR 窗口回归）
+npm test        # node --test（match / router 探针分流 / config 边界 / skill 注册 /
+                # dispose 对称性 / e2e 全链路：apply → 全局 fetch 分流 → dispose 恢复 + HMR 窗口回归）
 ```

@@ -16,6 +16,13 @@ function fakeCtx() {
     // mounted. Tests run without any settings service, so it stays dormant
     // and only the entry-config layer applies.
     inject(_names, _callback) {},
+    // apply() registers the bundled skill unconditionally (inject ['skills']
+    // guarantees the service on real hosts); assertions live in skill.test.mjs.
+    skills: {
+      registerProvider(_create) {
+        return () => {}
+      },
+    },
   }
 }
 

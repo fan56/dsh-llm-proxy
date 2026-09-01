@@ -70,6 +70,14 @@ function fakeCtx() {
         },
       })
     },
+    // apply() registers the bundled skill unconditionally (inject ['skills']
+    // guarantees the service on real hosts); detailed assertions live in
+    // skill.test.mjs, this fixture only needs the seam to exist.
+    skills: {
+      registerProvider(_create) {
+        return () => {}
+      },
+    },
     /** Simulate the user editing the dsh-llm-proxy section in settings.yaml. */
     publishSection(section) {
       ctx.stored = section
