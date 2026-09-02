@@ -1,6 +1,6 @@
 {
   "name": "@aiwayds/dsh-llm-proxy",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "dsh plugin: SYSTEM proxy (env) + LLM traffic-splitting proxy via a process-global undici routing dispatcher",
   "type": "module",
   "main": "lib/index.js",
