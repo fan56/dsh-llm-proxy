@@ -3,7 +3,8 @@
 #
 # The @deepseek-ai/* packages are typechecked against the closure of a real
 # dsh install, not just the registry devDependency pins: CI installs the dsh
-# CLI (alpha line, the one this plugin targets) and re-points every
+# CLI from the rolling rc/stable line (the line this plugin targets — newest
+# of the latest/next dist-tags, never alpha) and re-points every
 # node_modules/@deepseek-ai entry at its closure (scripts/link-dsh-closure.mjs)
 # before running tsc — so upstream drift fails the gate here instead of
 # surfacing as a broken plugin on user machines.
@@ -18,7 +19,7 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Daily 03:23 UTC — catches upstream dsh alpha drift without hand-pinning.
+    # Daily 03:23 UTC — catches upstream dsh rc/stable drift without hand-pinning.
     - cron: '23 3 * * *'
 
 permissions:
@@ -47,8 +48,20 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Install dsh CLI (alpha line — the host this plugin targets)
-        run: npm install -g @deepseek-ai/dsh@alpha --no-audit --no-fund
+      - name: Install dsh CLI (rolling rc/stable line — newest of latest/next, never alpha)
+        run: |
+          # Policy (2026-09-03): the alpha line is retired for CI. Resolve the
+          # newest of the `latest` (stable) and `next` (rc) dist-tags at
+          # runtime, never hand-pinned — when a stable 0.1.2+ lands on
+          # `latest` it wins over the rc by plain semver compare.
+          STABLE="$(npm view @deepseek-ai/dsh@latest version)"
+          RC="$(npm view @deepseek-ai/dsh@next version 2>/dev/null || true)"
+          DSH_VERSION="$STABLE"
+          if [ -n "$RC" ] && [ "$(printf '%s\n' "$STABLE" "$RC" | sort -V | tail -1)" = "$RC" ]; then
+            DSH_VERSION="$RC"
+          fi
+          echo "dsh closure: ${DSH_VERSION}"
+          npm install -g "@deepseek-ai/dsh@${DSH_VERSION}" --no-audit --no-fund
 
       # Re-point every @deepseek-ai/* entry at the installed host's closure so
       # typecheck judges the code that actually runs inside dsh. No-op (exit 0)

@@ -29,6 +29,8 @@ dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里�
 #     name: '@aiwayds/dsh-llm-proxy'
 ```
 
+> **要求 dsh >= 0.1.2-rc.1** — 本插件只跟随 dsh RC/stable 线（CI 与发版在运行时解析 latest/next 中更新的 dist-tag）。**不再支持 alpha 线。**
+
 > ⚠️ 最低宿主要求：0.2.0 起本插件声明 `inject: ['skills']`，要求宿主 dsh 提供 skills
 > 服务（`@deepseek-ai/dsh-skill` 0.1.1-rc 系列+）。无该服务的旧宿主上，本插件（含代理
 > 路由功能）不会加载。
@@ -65,7 +67,7 @@ cordis 闭包，导致双实例崩溃（详见 dsh 生态 link-dsh-closure 机�
 ## 配置入口（settings.yaml 命名空间段）
 
 dsh 插件的用户配置唯一入口是 **settings.yaml 里按插件 id 命名的命名空间段**。本插件通过
-`@deepseek-ai/dsh-settings`（要求 `>=0.1.2-alpha.4`）settings provider 的
+`@deepseek-ai/dsh-settings`（要求 `>=0.1.2-rc.1`）settings provider 的
 `installSection` 注册了 `dsh-llm-proxy` 命名空间
 （与 harness 内置插件 `llm-deepseek` 的 `llm-deepseek:` 段同机制），所以请在
 `~/.dsh/settings.yaml` 写：
