@@ -38,6 +38,23 @@ dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里�
 > 发布状态：本包已发布到 npm（0.2.0，自带内置 skill），方式一
 > `dsh plugin add @aiwayds/dsh-llm-proxy` 即可直接用。
 
+## 卸载
+
+```bash
+dsh plugin --profile <profile> remove @aiwayds/dsh-llm-proxy
+```
+
+宿主自动清理：profile 清单里的 `dsh.profile.bundles` 条目被摘除，本包的 patch 层随之卸下。
+
+插件自身**不在磁盘上留下任何状态**——不写任何文件，环境变量只读不写；进程级 undici/fetch 全局接管的拆除是对称且经过测试的（`test/dispose.test.mjs` 覆盖 dispose 后 globals 还原与 HMR 窗口），dispose 干净。
+
+会留存的只有**手动安装的 skill**（见上文 Skill 一节），需手工删除：
+
+```bash
+rm ~/.dsh/skills/dsh-llm-proxy    # 手动拷贝/软链的副本
+rm -r ~/.agents/skills/dsh-llm-proxy   # npx skills add 装出的条目
+```
+
 ## Skill（内置使用指南）
 
 本仓库自带一个 dsh skill（`skills/dsh-llm-proxy/SKILL.md`）：面向 agent 的配置 + 排障

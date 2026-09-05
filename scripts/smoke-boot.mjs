@@ -11,6 +11,9 @@
 //   5. a real boot under a timeout must load the plugin tree without a
 //      loader error (a healthy boot is silent and survives to the kill
 //      signal; a broken plugin dies within ~1s with the loader error)
+//   6. `dsh plugin --profile smoke remove <pkg>` must reconcile the profile
+//      tree back to stock: the bundles entry spliced, the patch layer
+//      dropped, and the plugin id gone from a fresh --dump-config
 //
 // Coverage notes (empirical, dsh 0.1.1-rc.2 and 0.1.2-alpha.3 hosts):
 // - Everything apply() does synchronously — ctx.skills.registerProvider(),
@@ -126,5 +129,14 @@ if (boot.signal !== 'SIGKILL' && boot.status !== 0) {
   fail(`dsh exited early with code ${boot.status} and no loader error — unexpected`, output)
 }
 
-console.log(`smoke-boot: PASS — ${ownName} composed into the scratch profile tree and booted clean in real dsh (${boot.signal === 'SIGKILL' ? `survived ${bootSeconds}s boot window` : `exited ${boot.status}`})`)
+// Phase 3 — uninstall leg: removal must reconcile the profile tree back to stock.
+const remove = spawnSync('dsh', ['plugin', '--profile', 'smoke', 'remove', ownName], { cwd: profile, encoding: 'utf8', env: dshEnv })
+if (remove.status !== 0 || remove.error) fail('dsh plugin remove failed', `${remove.stdout}\n${remove.stderr}`)
+const dumpAfter = spawnSync('dsh', ['--profile', 'smoke', '--dump-config'], { cwd: profile, encoding: 'utf8', env: dshEnv })
+if (dumpAfter.status !== 0 || dumpAfter.error) fail('dsh --dump-config failed after removal', `${dumpAfter.stdout}\n${dumpAfter.stderr}`)
+if (dumpAfter.stdout.includes('dsh-llm-proxy')) {
+  fail('the composed tree still contains the plugin entry after removal', dumpAfter.stdout)
+}
+
+console.log(`smoke-boot: PASS — ${ownName} composed into the scratch profile tree and booted clean in real dsh (${boot.signal === 'SIGKILL' ? `survived ${bootSeconds}s boot window` : `exited ${boot.status}`}); removal restored the stock tree`)
 rmSync(work, { recursive: true, force: true })

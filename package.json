@@ -34,7 +34,8 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "pretest": "npm run build",
     "prepare": "npm run build",
-    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs"
+    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs",
+    "smoke": "node scripts/smoke-boot.mjs"
   },
   "dependencies": {
     "undici": "8.9.0"
