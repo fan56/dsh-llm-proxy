@@ -1,5 +1,5 @@
 ---
-name: dsh-llm-proxy
+name: dsh-llm-proxy-config
 description: "dsh 出站代理 / LLM 分流插件（@aiwayds/dsh-llm-proxy）使用指南。凡给 dsh 插件配置 HTTP 代理、LLM 出站分流，或排查代理网络问题时先读本指南：settings.yaml 顶层 `dsh-llm-proxy:` 段（enabled/systemMode/llmProxy）、llmProxy match 规则、代理 407、CONNECT 挂起、socks5 报错（SOCKS 不支持）、NODE_USE_ENV_PROXY 等价替代。触发词：dsh 代理、HTTP 代理、LLM 分流、llmProxy、llm-proxy、407、CONNECT 挂起、SOCKS、HTTPS_PROXY、NO_PROXY、出站代理、NODE_USE_ENV_PROXY。"
 ---
 

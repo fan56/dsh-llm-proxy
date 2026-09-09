@@ -11,7 +11,7 @@
  *
  * Priority: llmProxy hit > SYSTEM (env) > direct.
  *
- * apply() also registers a bundled skill (skills/dsh-llm-proxy/SKILL.md) that
+ * apply() also registers a bundled skill (skills/dsh-llm-proxy-config/SKILL.md) that
  * carries the plugin's configuration and troubleshooting guide.
  *
  * User configuration arrives exclusively through the `dsh-llm-proxy`
@@ -265,15 +265,15 @@ interface ActiveLayer {
 // --- Bundled skill -----------------------------------------------------------
 
 /** Provider name under `ctx.skills`; doubles as the skill name. */
-const SKILL_PROVIDER_NAME = 'dsh-llm-proxy'
+const SKILL_PROVIDER_NAME = 'dsh-llm-proxy-config'
 
 /** Packaged skill body; `../skills/` resolves to the package root from both lib/ and src/. */
-const SKILL_BODY_URL = new URL('../skills/dsh-llm-proxy/SKILL.md', import.meta.url)
+const SKILL_BODY_URL = new URL('../skills/dsh-llm-proxy-config/SKILL.md', import.meta.url)
 
 /** Resource base served with the skill so its relative links resolve. */
 const SKILL_RESOURCE_BASE = {
   kind: 'directory',
-  path: fileURLToPath(new URL('../skills/dsh-llm-proxy/', import.meta.url)),
+  path: fileURLToPath(new URL('../skills/dsh-llm-proxy-config/', import.meta.url)),
 } as const
 
 const SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const

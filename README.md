@@ -51,13 +51,13 @@ dsh plugin --profile <profile> remove @aiwayds/dsh-llm-proxy
 会留存的只有**手动安装的 skill**（见上文 Skill 一节），需手工删除：
 
 ```bash
-rm ~/.dsh/skills/dsh-llm-proxy    # 手动拷贝/软链的副本
-rm -r ~/.agents/skills/dsh-llm-proxy   # npx skills add 装出的条目
+rm ~/.dsh/skills/dsh-llm-proxy-config    # 手动拷贝/软链的副本
+rm -r ~/.agents/skills/dsh-llm-proxy-config   # npx skills add 装出的条目
 ```
 
 ## Skill（内置使用指南）
 
-本仓库自带一个 dsh skill（`skills/dsh-llm-proxy/SKILL.md`）：面向 agent 的配置 + 排障
+本仓库自带一个 dsh skill（`skills/dsh-llm-proxy-config/SKILL.md`）：面向 agent 的配置 + 排障
 使用指南，frontmatter `description` 内嵌触发词（dsh 代理、HTTP 代理、LLM 分流、llmProxy、
 407、CONNECT 挂起、SOCKS、NODE_USE_ENV_PROXY 等），进入每会话模型目录用于路由。三种获取方式：
 
@@ -70,11 +70,11 @@ rm -r ~/.agents/skills/dsh-llm-proxy   # npx skills add 装出的条目
    npx skills add fan56/dsh-llm-proxy   # 安装到 ~/.agents/skills/
    ```
 
-3. **手动**：`git clone` 本仓库后，把 `skills/dsh-llm-proxy/` 拷贝或软链到 `~/.dsh/skills/`：
+3. **手动**：`git clone` 本仓库后，把 `skills/dsh-llm-proxy-config/` 拷贝或软链到 `~/.dsh/skills/`：
 
    ```bash
    git clone https://github.com/fan56/dsh-llm-proxy.git
-   ln -s "$(pwd)/dsh-llm-proxy/skills/dsh-llm-proxy" ~/.dsh/skills/dsh-llm-proxy
+   ln -s "$(pwd)/dsh-llm-proxy/skills/dsh-llm-proxy-config" ~/.dsh/skills/dsh-llm-proxy-config
    ```
 
 ⚠️ 铁律：本包的 `@deepseek-ai/*` 只声明在 **peerDependencies**
