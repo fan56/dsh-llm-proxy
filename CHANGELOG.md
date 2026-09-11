@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-11
+
+### Changed
+
+- **dsh 支持下限抬到 `>= 0.1.5-rc.2`**（peer floors：`dsh-settings` / `dsh-skill`；README 同步）。dev 闭包随 0.1.5-rc.2 线（0.1.5 是 rc.1 的纯版本重钉、代码零差异）。
+
 ## [0.4.2] - 2026-09-09
 
 ### Changed
