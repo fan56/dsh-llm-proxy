@@ -21,7 +21,7 @@ LLM 列表命中 > SYSTEM proxy（env 语义）> 直连
 
 ```bash
 # 方式一：作为 npm 插件加入 profile
-dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里声明
+dsh plugin add @aiwayds/dsh-llm-proxy
 
 # 方式二：手动 patch 挂载（本包自带 cordis.patch.yml）
 # 在 profile 的 bundles 中插入：
