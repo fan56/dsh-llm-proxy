@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-llm-proxy",
+    "description": "System proxy (env) plus LLM traffic-splitting proxy via a process-global undici routing dispatcher."
+  }
+}

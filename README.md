@@ -29,7 +29,7 @@ dsh plugin add @aiwayds/dsh-llm-proxy   # 或在 settings.yaml 的 plugins 里�
 #     name: '@aiwayds/dsh-llm-proxy'
 ```
 
-> **要求 dsh >= 0.1.5-rc.2** — 本插件只跟随 dsh RC/stable 线（CI 与发版在运行时解析 latest/next 中更新的 dist-tag）。**不再支持 alpha 线。**
+> **要求 dsh >= 0.1.7-rc.1** — 本插件只跟随 dsh RC/stable 线（CI 与发版在运行时解析 latest/next 中更新的 dist-tag）。**不再支持 alpha 线。**
 
 > ⚠️ 最低宿主要求：0.2.0 起本插件声明 `inject: ['skills']`，要求宿主 dsh 提供 skills
 > 服务（`@deepseek-ai/dsh-skill` 0.1.1-rc 系列+）。无该服务的旧宿主上，本插件（含代理
@@ -81,36 +81,42 @@ rm -r ~/.agents/skills/dsh-llm-proxy-config   # npx skills add 装出的条目
 （devDependencies 保留供本地构建）。请勿把它们挪进 dependencies——那会装出第二份
 cordis 闭包，导致双实例崩溃（详见 dsh 生态 link-dsh-closure 机制）。
 
-## 配置入口（settings.yaml 命名空间段）
+## 配置入口（插件 entry config / 设置页）
 
-dsh 插件的用户配置唯一入口是 **settings.yaml 里按插件 id 命名的命名空间段**。本插件通过
-`@deepseek-ai/dsh-settings`（要求 `>=0.1.5-rc.2`）settings provider 的
-`installSection` 注册了 `dsh-llm-proxy` 命名空间
-（与 harness 内置插件 `llm-deepseek` 的 `llm-deepseek:` 段同机制），所以请在
-`~/.dsh/settings.yaml` 写：
+dsh 0.1.7 起，插件配置 = **插件声明的 static Config schema**（声明即注册）：本插件为
+entry `dsh-llm-proxy` 声明了 `enabled` / `systemMode` / `llmProxy` 三个字段且全部
+`.volatile()`，宿主据此在设置页生成表单，用户值落在 profile patch 里该 entry 的
+`config:` 段；设置页改动**免重启热生效**（volatile-only 写入不重挂插件，本插件原地
+重建 router，值未变的写入自动跳过重建）。
 
 ```yaml
-dsh-llm-proxy:
-  enabled: true                    # 总开关，默认 true；false 时完全不动全局
-  systemMode: env                  # 'env'（默认，读环境变量）| 'off'（全部直连，仅 llmProxy 生效）
-  llmProxy:                        # 匹配列表，按顺序首条命中生效
-    - match: "api.deepseek.org"    # 域名精确匹配（含任意端口）
-      proxy: "http://127.0.0.1:7890"
-    - match: "*.volces.com"        # 通配：volces.com 本身 + 任意子域
-      proxy: "http://127.0.0.1:7891"
-    - match: "https://api.openai.com"  # 完整 origin 精确匹配（大小写不敏感）
-      proxy: "http://127.0.0.1:7892"
+# profile 的 cordis.patch.yml（设置页写入也落在这里）：
+- id: dsh-llm-proxy
+  config:
+    enabled: true                    # 总开关，默认 true；false 时完全不动全局
+    systemMode: env                  # 'env'（默认，读环境变量）| 'off'（全部直连，仅 llmProxy 生效）
+    llmProxy:                        # 匹配列表，按顺序首条命中生效
+      - match: "api.deepseek.org"    # 域名精确匹配（含任意端口）
+        proxy: "http://127.0.0.1:7890"
+      - match: "*.volces.com"        # 通配：volces.com 本身 + 任意子域
+        proxy: "http://127.0.0.1:7891"
+      - match: "https://api.openai.com"  # 完整 origin 精确匹配（大小写不敏感）
+        proxy: "http://127.0.0.1:7892"
 ```
 
 要点：
 
-- **顶层键必须是 `dsh-llm-proxy:`**（与插件 id 一致）。写其他键（如 `llm-proxy:`）不会
-  被读到，静默失效。
-- 编辑 settings.yaml **热生效**：settings provider 发布变更后，插件会拆掉旧 router、按新
-  配置重建，无需重启。
+- **旧 `settings.yaml` 的 `dsh-llm-proxy:` 段自动迁移**：0.1.7 宿主启动时把旧
+  settings.yaml 各段按「段名 = entry id」一次性导入 profile patch。本插件旧段名与
+  entry id 同为 `dsh-llm-proxy`、三个键都在 volatile Config 里，存量用户值零手工迁移
+  （导入后旧文件被宿主改名为 `settings.yaml.imported`）。
+- **entry id 必须是 `dsh-llm-proxy`**（bundle patch insert 的 id）。旧 settings.yaml 段名
+  写成其他键（如 `llm-proxy:`）不会被导入，静默失效。
+- 编辑 **热生效**：volatile-only 改动不重挂插件，插件拆掉旧 router、按新配置原地重建，
+  无需重启。
 - bundle entry config（`cordis.patch.yml` insert 行的 `config:`）作为 base 层仍然有效；
-  settings.yaml 段覆盖其上的同名键。
-- 未挂载 settings 服务的宿主自动回退到 entry config，插件照常工作。
+  profile patch/设置页值覆盖其上的同名键。
+- 未挂载 settings 服务的宿主上，事件订阅自动休眠，entry config 照常生效。
 
 ### match 规则
 
@@ -159,7 +165,7 @@ undici `ProxyAgent` 只支持 **http:// 与 https://** 上游代理。
 ```bash
 # 1. 配一个本地回显代理（如 clash/mihomo 的 mixed-port 7890）
 export HTTPS_PROXY=http://127.0.0.1:7890
-# 2. settings.yaml 配 dsh-llm-proxy 段，把某个 API 域名指到另一端口
+# 2. 给 dsh-llm-proxy entry 配 llmProxy（设置页/profile patch），把某个 API 域名指到另一端口
 # 3. 启动 dsh 后发起对话，观察代理访问日志：
 #    - llmProxy 命中域名的请求出现在该条代理日志里
 #    - 其他外网请求出现在 7890 日志里

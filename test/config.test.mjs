@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { redactProxyUrl, resolveConfig } from '../lib/index.js'
+import { Config, redactProxyUrl, resolveConfig } from '../lib/index.js'
 
 test('defaults: enabled=true, systemMode=env, empty llmProxy', () => {
   const policy = resolveConfig(undefined)
@@ -54,4 +54,39 @@ test('validation errors never echo proxy credentials', () => {
     () => resolveConfig({ llmProxy: [{ match: 'a.com', proxy: 'socks5://user:hunter2@127.0.0.1:1080' }] }),
     (error) => !String(error).includes('hunter2'),
   )
+})
+
+test('static Config schema resolves every field to a volatile reference with defaults', () => {
+  const config = Config({})
+  assert.equal(typeof config.enabled.get, 'function')
+  assert.equal(typeof config.systemMode.get, 'function')
+  assert.equal(typeof config.llmProxy.get, 'function')
+  assert.equal(config.enabled.get(), true)
+  assert.equal(config.systemMode.get(), 'env')
+  assert.deepEqual([...config.llmProxy.get()], [])
+})
+
+test('Config({...}) carries the given values through live volatile references', () => {
+  const config = Config({
+    enabled: false,
+    systemMode: 'off',
+    llmProxy: [{ match: 'a.com', proxy: 'http://127.0.0.1:7890' }],
+  })
+  assert.equal(config.enabled.get(), false)
+  assert.equal(config.systemMode.get(), 'off')
+  assert.deepEqual([...config.llmProxy.get()], [{ match: 'a.com', proxy: 'http://127.0.0.1:7890' }])
+  // Snapshots are deep-frozen, mirroring the host's volatile reference protocol.
+  assert.equal(Object.isFrozen(config.llmProxy.get()), true)
+})
+
+test('schema-resolved values agree with resolveConfig (the apply() read path)', () => {
+  const config = Config({ llmProxy: [{ match: ' x.com ', proxy: ' http://127.0.0.1:3 ' }] })
+  const policy = resolveConfig({
+    enabled: config.enabled.get(),
+    systemMode: config.systemMode.get(),
+    llmProxy: config.llmProxy.get(),
+  })
+  assert.equal(policy.enabled, true)
+  assert.equal(policy.systemMode, 'env')
+  assert.deepEqual([...policy.llmProxy], [{ match: 'x.com', proxy: 'http://127.0.0.1:3' }])
 })

@@ -5,6 +5,7 @@
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
+  "icon": "./icon.svg",
   "license": "MIT",
   "keywords": [
     "dsh",
@@ -27,7 +28,9 @@
     "lib",
     "cordis.patch.yml",
     "src",
-    "skills"
+    "skills",
+    "icon.svg",
+    "locale/*.json"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -42,10 +45,10 @@
     "undici": "8.9.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/schemastery": "3.18.2",
-    "@deepseek-ai/dsh-settings": ">=0.1.5-rc.2",
-    "@deepseek-ai/dsh-skill": ">=0.1.5-rc.2"
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@deepseek-ai/dsh-settings": ">=0.1.7-rc.1",
+    "@deepseek-ai/dsh-skill": ">=0.1.7-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
@@ -59,10 +62,10 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/schemastery": "3.18.2",
-    "@deepseek-ai/dsh-settings": "0.1.5-rc.2",
-    "@deepseek-ai/dsh-skill": "0.1.5-rc.2",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@deepseek-ai/dsh-settings": "0.1.7-rc.1",
+    "@deepseek-ai/dsh-skill": "0.1.7-rc.1",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   },

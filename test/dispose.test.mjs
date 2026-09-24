@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import * as undici from 'undici'
-import { apply } from '../lib/index.js'
+import { apply, Config } from '../lib/index.js'
 
 function fakeCtx() {
   const factories = []
@@ -40,7 +40,7 @@ test('enabled=false never touches the global dispatcher or fetch', async () => {
   const before = undici.getGlobalDispatcher()
   const fetchBefore = globalThis.fetch
   const ctx = fakeCtx()
-  apply(ctx, { enabled: false })
+  apply(ctx, Config({ enabled: false }))
   assert.equal(ctx.factories.length, 0)
   assert.equal(undici.getGlobalDispatcher(), before)
   assert.equal(globalThis.fetch, fetchBefore)
@@ -49,7 +49,7 @@ test('enabled=false never touches the global dispatcher or fetch', async () => {
 test('apply/dispose is symmetric on the global dispatcher', async () => {
   const before = undici.getGlobalDispatcher()
   const ctx = fakeCtx()
-  apply(ctx, {})
+  apply(ctx, Config({}))
   try {
     const router = undici.getGlobalDispatcher()
     assert.notEqual(router, before)
@@ -62,11 +62,11 @@ test('apply/dispose is symmetric on the global dispatcher', async () => {
 test('layered applies unwind in reverse order without clobbering', async () => {
   const initial = undici.getGlobalDispatcher()
   const ctxA = fakeCtx()
-  apply(ctxA, {})
+  apply(ctxA, Config({}))
   const routerA = undici.getGlobalDispatcher()
 
   const ctxB = fakeCtx()
-  apply(ctxB, {})
+  apply(ctxB, Config({}))
   const routerB = undici.getGlobalDispatcher()
   assert.notEqual(routerB, routerA)
 
@@ -83,7 +83,7 @@ test('a pre-existing fetch override is preserved and left alone', async () => {
   globalThis.fetch = sentinel
   try {
     const ctx = fakeCtx()
-    apply(ctx, {})
+    apply(ctx, Config({}))
     try {
       // install() must be skipped: fetch was deliberately overridden first.
       assert.equal(globalThis.fetch, sentinel)
@@ -99,7 +99,7 @@ test('a pre-existing fetch override is preserved and left alone', async () => {
 test('dispose returns without draining in-flight requests; close finishes in background', async () => {
   const before = undici.getGlobalDispatcher()
   const ctx = fakeCtx()
-  apply(ctx, {})
+  apply(ctx, Config({}))
   const router = undici.getGlobalDispatcher()
 
   // Simulate an in-flight LLM stream: close() blocks until released.

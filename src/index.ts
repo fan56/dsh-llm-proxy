@@ -14,13 +14,16 @@
  * apply() also registers a bundled skill (skills/dsh-llm-proxy-config/SKILL.md) that
  * carries the plugin's configuration and troubleshooting guide.
  *
- * User configuration arrives exclusively through the `dsh-llm-proxy`
- * settings.yaml namespace (registered via the settings provider's
- * installSection, the same seam harness core plugins use); the bundle entry
- * config is the base layer.
- * Edits to the settings section hot-publish: the router is rebuilt in place,
- * unless the resolved values are unchanged, in which case the rebuild is
- * skipped (the settings attach itself fires one redundant onChange).
+ * User configuration is declared as the plugin's static Config schema
+ * (`apply.Config`, the dsh >= 0.1.7-rc.1 settings system): every field is
+ * `.volatile()`, so the settings page can edit all of them and volatile-only
+ * writes swap the live references in place without remounting the plugin. The
+ * host's `settings/document-updated` event for this entry triggers a rejudge
+ * that rebuilds the router in place — unless the resolved values are
+ * unchanged, in which case the rebuild is skipped. Legacy `settings.yaml`
+ * sections are imported once by the host at startup (the old namespace equals
+ * the bundle entry id `dsh-llm-proxy`, so existing user values carry over);
+ * the bundle entry config remains the base layer under profile patches.
  *
  * Environment variables are only read, never written: mutating
  * process.env.HTTP_PROXY in an already-started process has no effect on
@@ -31,14 +34,13 @@
 
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 // Type-only side-effect import: loads dsh-settings' `declare module
-// '@deepseek-ai/cordis'` augmentation, which is what puts `ctx.settings` on
-// the Context type. There is no runtime import — the host provides the
-// settings service; alpha.3 removed the module-level settingsNamespace(),
-// installSettingsSection(), and deepEqualJson() helpers this plugin used to
-// import (see SETTINGS_NAMESPACE below, the installSection call in apply(),
-// and ./deep-equal.ts for their replacements).
+// '@deepseek-ai/cordis'` augmentations, which put `ctx.settings` on the
+// Context type and type the `settings/document-updated` event. There is no
+// runtime import — the host provides the settings service; 0.1.7 replaced the
+// old SettingsProvider/installSection seam with the plugin's static Config
+// schema plus volatile fields (see apply.Config below).
 import type {} from '@deepseek-ai/dsh-settings'
 import {
   BUNDLED_SKILL_RANK,
@@ -60,20 +62,35 @@ export const name = 'dsh-llm-proxy'
 export const inject = ['skills']
 
 /**
- * The settings.yaml namespace this plugin owns. dsh feeds user configuration
- * to plugins only through registered settings namespaces; the document
- * section key that reaches this plugin is exactly this string.
- *
- * A plain literal is the supported spelling since dsh-settings
- * 0.1.2-alpha.3: `register`/`installSection` brand-check the namespace at the
- * type level (`SettingsNamespaceInput`) and validate the same pattern at
- * runtime (`parseSettingsNamespace`), replacing the removed
- * `settingsNamespace()` helper.
+ * The bundle entry id this plugin mounts under (the `cordis.patch.yml`
+ * insert). In the 0.1.7 settings system the entry id doubles as the settings
+ * document namespace: `settings/document-updated` events for this id concern
+ * this plugin's form. It equals the pre-0.1.7 settings.yaml namespace, so
+ * legacy user sections are imported by the host into this entry unchanged.
  */
-const SETTINGS_NAMESPACE = 'dsh-llm-proxy'
+const ENTRY_ID = 'dsh-llm-proxy'
 
-/** Plugin configuration. */
+/**
+ * Runtime plugin configuration as injected into {@link apply}: every field is
+ * a live volatile reference declared in the static {@link Config} schema. The
+ * host swaps the references in place on settings-page edits (no plugin
+ * remount); `.get()` returns a deep-frozen snapshot of the current values.
+ */
 export interface Config {
+  /** Master switch; `false` leaves globals untouched (default `true`). */
+  enabled: Volatile<boolean>
+  /**
+   * Fallback mode for requests no llmProxy entry matches (default `env`):
+   * `env` applies HTTPS_PROXY / HTTP_PROXY / ALL_PROXY / NO_PROXY from the
+   * startup environment; `off` connects directly.
+   */
+  systemMode: Volatile<'env' | 'off'>
+  /** Ordered LLM proxy list; the first entry whose match hits wins. */
+  llmProxy: Volatile<Array<{ match: string; proxy: string }>>
+}
+
+/** Plain (unwrapped) plugin configuration values, e.g. from an entry patch. */
+export interface ConfigInput {
   /** Master switch; `false` leaves globals untouched (default `true`). */
   enabled?: boolean
   /**
@@ -83,18 +100,27 @@ export interface Config {
    */
   systemMode?: 'env' | 'off'
   /** Ordered LLM proxy list; the first entry whose match hits wins. */
-  llmProxy?: Array<{ match: string; proxy: string }>
+  llmProxy?: ReadonlyArray<{ match: string; proxy: string }>
 }
 
-/** Runtime schema for {@link Config}. */
+/**
+ * Static config schema for the plugin: declaration is registration in the
+ * 0.1.7 settings system — the host projects this schema into the entry's
+ * settings form (keyed by the entry id {@link ENTRY_ID}) and resolves entry
+ * configs through it. All three fields are user-adjustable proxy policy and
+ * are marked `.volatile()` so the settings page offers them with hot reload:
+ * volatile-only edits never remount the plugin, and {@link apply} rebuilds
+ * the router in place when the values actually change. Every field carries a
+ * `.default()` so an unconfigured entry still resolves fully populated.
+ */
 export const Config = z.object({
-  enabled: z.boolean().default(true),
-  systemMode: z.union([z.const('env'), z.const('off')]).default('env'),
+  enabled: z.boolean().default(true).volatile(),
+  systemMode: z.union([z.const('env'), z.const('off')]).default('env').volatile(),
   llmProxy: z.array(z.object({
     match: z.string(),
     proxy: z.string(),
-  })),
-}) as unknown as z<Config>
+  })).default([]).volatile(),
+})
 
 const CONFIG_KEYS: ReadonlySet<string> = new Set(['enabled', 'systemMode', 'llmProxy'])
 
@@ -140,9 +166,9 @@ export interface ResolvedConfig {
 
 /**
  * Validate, default, and freeze the plugin configuration.
- * @param config - optional plugin configuration; omission selects defaults.
+ * @param config - optional plain configuration values; omission selects defaults.
  */
-export function resolveConfig(config: Config | undefined): ResolvedConfig {
+export function resolveConfig(config: ConfigInput | undefined): ResolvedConfig {
   if (config !== undefined) {
     for (const key of Object.keys(config)) {
       if (!CONFIG_KEYS.has(key)) throw new Error(`dsh-llm-proxy: config: unknown key "${key}"`)
@@ -279,7 +305,7 @@ const SKILL_RESOURCE_BASE = {
 const SKILL_INVOCATION = { modelInvocable: true, userInvocable: true } as const
 
 /** Routing description; must stay identical to the SKILL.md frontmatter (asserted in tests). */
-const SKILL_DESCRIPTION = 'dsh 出站代理 / LLM 分流插件（@aiwayds/dsh-llm-proxy）使用指南。凡给 dsh 插件配置 HTTP 代理、LLM 出站分流，或排查代理网络问题时先读本指南：settings.yaml 顶层 `dsh-llm-proxy:` 段（enabled/systemMode/llmProxy）、llmProxy match 规则、代理 407、CONNECT 挂起、socks5 报错（SOCKS 不支持）、NODE_USE_ENV_PROXY 等价替代。触发词：dsh 代理、HTTP 代理、LLM 分流、llmProxy、llm-proxy、407、CONNECT 挂起、SOCKS、HTTPS_PROXY、NO_PROXY、出站代理、NODE_USE_ENV_PROXY。'
+const SKILL_DESCRIPTION = 'dsh 出站代理 / LLM 分流插件（@aiwayds/dsh-llm-proxy）使用指南。凡给 dsh 插件配置 HTTP 代理、LLM 出站分流，或排查代理网络问题时先读本指南：`dsh-llm-proxy` 插件配置（enabled/systemMode/llmProxy，设置页可改、免重启热更；旧 settings.yaml `dsh-llm-proxy:` 段启动时自动导入）、llmProxy match 规则、代理 407、CONNECT 挂起、socks5 报错（SOCKS 不支持）、NODE_USE_ENV_PROXY 等价替代。触发词：dsh 代理、HTTP 代理、LLM 分流、llmProxy、llm-proxy、407、CONNECT 挂起、SOCKS、HTTPS_PROXY、NO_PROXY、出站代理、NODE_USE_ENV_PROXY。'
 
 const SKILL_CANDIDATE: SkillCandidate = {
   name: SKILL_PROVIDER_NAME,
@@ -335,26 +361,27 @@ export function stripFrontmatter(raw: string): string {
 }
 
 /**
- * Install the global routing dispatcher, wire the `dsh-llm-proxy` settings
- * namespace, register the bundled skill provider, and register teardown.
+ * Install the global routing dispatcher, subscribe to this entry's settings
+ * updates, register the bundled skill provider, and register teardown.
  * @param ctx - plugin context owning the dispose effect.
- * @param config - composition entry config; the base layer under the
- *   settings.yaml `dsh-llm-proxy` section.
+ * @param config - live volatile references resolved from the entry config
+ *   through the static {@link Config} schema (the base layer under the
+ *   user's profile patch / imported settings section); omission selects the
+ *   schema defaults.
  * @param internals - injectable dispatcher factories for tests.
  */
-export function apply(ctx: Context, config: Config = {}, internals: ApplyInternals = {}): void {
-  // `inject = ['skills']` guarantees the service exists on every real host;
-  // register unconditionally so a missing service fails loud instead of
-  // silently dropping the bundled skill.
-  ctx.skills.registerProvider(() => skillProvider)
-  // Current authoritative config source: the entry until a settings scope
-  // layers the user's settings.yaml section on top (and back to the entry if
-  // the settings provider detaches). The seam hands over a thunk so every
-  // rejudge reads the live layered value instead of a stale snapshot.
-  let getSource: () => Config = () => config
-  let active: ActiveLayer | undefined
-  let activePolicy: ResolvedConfig | undefined
-  let effectRegistered = false
+export const apply = Object.assign(
+  function apply(ctx: Context, config: Config = Config({}), internals: ApplyInternals = {}): void {
+    // `inject = ['skills']` guarantees the service exists on every real host;
+    // register unconditionally so a missing service fails loud instead of
+    // silently dropping the bundled skill.
+    ctx.skills.registerProvider(() => skillProvider)
+    // The volatile references above ARE the authoritative config source: the
+    // host swaps them in place on volatile-only settings edits, so every
+    // rejudge reads the current layered value directly through `.get()`.
+    let active: ActiveLayer | undefined
+    let activePolicy: ResolvedConfig | undefined
+    let effectRegistered = false
 
   function installLayer(policy: ResolvedConfig): ActiveLayer {
     const systemDispatcher =
@@ -392,7 +419,11 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
   const rejudge = (failFast: boolean): void => {
     let policy: ResolvedConfig
     try {
-      policy = resolveConfig(getSource())
+      policy = resolveConfig({
+        enabled: config.enabled.get(),
+        systemMode: config.systemMode.get(),
+        llmProxy: config.llmProxy.get(),
+      })
     } catch (error) {
       if (failFast) throw error
       ctx.logger?.error(
@@ -401,10 +432,9 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
       )
       return
     }
-    // Attaching the settings scope fires onChange unconditionally, even when
-    // the layered section resolves to the same values as the entry base
-    // layer; rebuilding then would tear down and reinstall an identical
-    // router for nothing. Skip when no resolved value changed.
+    // Settings events can announce writes whose resolved policy is identical
+    // to the live one; rebuilding then would tear down and reinstall an
+    // identical router for nothing. Skip when no resolved value changed.
     if (activePolicy !== undefined && deepEqualJson(policy, activePolicy)) return
     if (!policy.enabled) {
       const current = active
@@ -431,23 +461,22 @@ export function apply(ctx: Context, config: Config = {}, internals: ApplyInterna
     if (previous) teardownLayer(previous)
   }
 
-  // Start immediately with the entry config so the plugin works even on hosts
-  // that never mount a settings service; when the service appears, the
-  // layered section takes over and subsequent edits hot-publish here.
+  // Start immediately with the resolved entry config so the plugin works even
+  // on hosts that never mount a settings service; when the service is
+  // present, settings edits arrive as in-place reference swaps announced by
+  // the document-updated event, and subsequent edits hot-publish here.
   rejudge(true)
-  // Optional-settings consumer wiring. The rc.2 module-level
-  // installSettingsSection() helper was removed in dsh-settings
-  // 0.1.2-alpha.3; the attach / detach-fallback / watch body moved behind the
-  // provider as SettingsProvider.installSection (identical semantics — the
-  // entry config stays the fallback source when the provider detaches).
-  // ctx.inject keeps the whole wiring dormant on hosts that never mount a
-  // settings service.
+  // Optional-settings consumer wiring. dsh-settings 0.1.7 deleted
+  // SettingsProvider/installSection: the plugin's static Config schema
+  // (attached to this function below) is the declaration, volatile-only
+  // edits land in the references without a remount, and the settings service
+  // announces them per entry id. The ctx.inject keeps the listener dormant on
+  // hosts that never mount a settings service; mixed (volatile+ordinary)
+  // edits remount the plugin instead, rerunning apply() from the top.
   ctx.inject(['settings'], (sctx) => {
-    sctx.settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
-      setSource: (current) => {
-        getSource = current
-      },
-      onChange: () => rejudge(false),
+    sctx.on('settings/document-updated', (ns) => {
+      if (ns !== ENTRY_ID) return
+      rejudge(false)
     })
   })
-}
+}, { Config })

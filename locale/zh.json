@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "dsh-llm-proxy",
+    "description": "系统代理（env）与基于进程级 undici 路由 dispatcher 的 LLM 流量分流代理。"
+  }
+}

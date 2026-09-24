@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
-import { apply, inject, name, stripFrontmatter } from '../lib/index.js'
+import { apply, Config, inject, name, stripFrontmatter } from '../lib/index.js'
 
 // Minimal cordis-like context: the bundled-skill registration path needs
 // ctx.skills; the settings seam stays dormant, and enabled=false keeps the
@@ -45,7 +45,7 @@ test('plugin metadata: name and inject expose the skills dependency', () => {
 
 test('apply registers the bundled skill provider on ctx.skills', async () => {
   const ctx = mockCtx()
-  apply(ctx, { enabled: false })
+  apply(ctx, Config({ enabled: false }))
   assert.equal(ctx.registered.length, 1)
   const provider = ctx.registered[0]
   assert.equal(provider.name, 'dsh-llm-proxy-config')
@@ -73,7 +73,7 @@ test('apply registers the bundled skill provider on ctx.skills', async () => {
 
 test('provider.get loads the packaged SKILL.md with matching metadata', async () => {
   const ctx = mockCtx()
-  apply(ctx, { enabled: false })
+  apply(ctx, Config({ enabled: false }))
   const provider = ctx.registered[0]
   const [candidate] = await provider.list({})
 

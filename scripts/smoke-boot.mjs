@@ -19,12 +19,13 @@
 // - Everything apply() does synchronously — ctx.skills.registerProvider(),
 //   the entry-config router install, the global dispatcher takeover — is
 //   gated hard: a throw there dies with "plugin tree failed to load".
-// - The ctx.inject(['settings']) wiring is NOT judgeable from the boot: a
-//   cordis inject sub-fiber that throws (missing method, schema-rejected
-//   stored section) is contained silently. That seam is gated instead by
+// - The ctx.inject(['settings']) listener wiring is NOT judgeable from the
+//   boot: a cordis inject sub-fiber that throws (missing method, rejected
+//   event registration) is contained silently. That seam is gated instead by
 //   `npm run check` against the linked dsh closure (signature-level) plus
 //   the unit suite (semantics-level). The valid settings.yaml section below
-//   still exercises the real provider path as far as the boot can show.
+//   exercises the host's one-shot legacy import path as far as the boot can
+//   show (on dsh >= 0.1.7-rc.1 hosts it feeds the entry's volatile config).
 // - The host must match the plugin's target line (CI installs dsh@alpha):
 //   a mismatched older host can boot "cleanly" while the contained inject
 //   error silently drops the settings integration.
@@ -78,10 +79,10 @@ writeFileSync(path.join(profile, 'package.json'), JSON.stringify({
   },
 }, null, 2) + '\n')
 
-// A user settings.yaml section for the plugin's namespace: with dsh-base
-// mounting dsh-settings-file, the boot proves the settings seam registers and
-// resolves against the real provider (an invalid registration would die at
-// apply time and trip the loader-error gate below).
+// A user settings.yaml section matching the plugin's entry id: on dsh
+// >= 0.1.7-rc.1 hosts the boot's one-shot legacy import consumes it (all
+// three keys are volatile config fields, so the section imports cleanly and
+// the values land in the profile patch for this entry).
 writeFileSync(path.join(home, 'settings.yaml'), `\
 # smoke: user section consumed by the mounted dsh-llm-proxy plugin
 dsh-llm-proxy:
