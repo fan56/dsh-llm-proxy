@@ -14,7 +14,11 @@
     "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
     "verbatimModuleSyntax": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/cosmokit": ["node_modules/@deepseek-ai/cosmokit/lib/types/index.d.ts"]
+    }
   },
   "include": ["src"]
 }

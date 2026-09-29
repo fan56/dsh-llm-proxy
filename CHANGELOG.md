@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Raise dsh host floor to 0.2.0-rc.2**（peer 地板：`dsh-settings`/`dsh-skill` `>=0.2.0-rc.2`；dev 钉 exact `0.2.0-rc.2`；lockfile 对 registry.npmjs.org 全量重生成）。`@deepseek-ai/cordis` 4.0.4 / `@deepseek-ai/schemastery` 3.18.4 钉版保持不动；零源码改动。
+- **tsconfig `paths` 钉住 cosmokit 类型身份**（dev-only）：0.2.0 闭包把 `@deepseek-ai/*` 嵌在 dsh 包自身 node_modules 内，Config/apply 导出类型里泄漏的 cosmokit 类型只能经该嵌套路径命名，declaration emit 报 TS2742；将 `@deepseek-ai/cosmokit` 映射到仓内闭包链接后产物 d.ts 可移植（与 0.1.7 闭包产出逐字节一致）。仅影响 tsc，运行时解析不变。
 - **迁移 dsh 0.1.7 settings 体系**（peer 地板：`dsh-settings`/`dsh-skill` `>=0.1.7-rc.1`）。插件配置从 `SettingsProvider.installSection`（settings.yaml 命名空间段 + scope 分层）迁到插件 **static Config schema**（声明即注册）：`enabled`/`systemMode`/`llmProxy` 三字段全部 `.volatile()`——设置页可编辑且**免重启热生效**（volatile-only 写入不重挂插件，router 原地重建；解析值未变的写入自动跳过重建）。热更触发由旧 settings watcher 改为订阅 `settings/document-updated`（按 entry id `dsh-llm-proxy` 过滤）。
 - **旧用户值自动迁移**：旧 settings.yaml `dsh-llm-proxy:` 段名与 bundle entry id 同名、三个键均为 volatile 字段，0.1.7 宿主启动时一次性导入 profile patch，存量用户值零手工迁移。
 - **依赖钉点**：peer `@deepseek-ai/dsh-settings`/`@deepseek-ai/dsh-skill` 地板抬到 `>=0.1.7-rc.1`（宿主兼容预检据此拦截旧宿主装载）；dev 钉 exact `0.1.7-rc.1`；`@deepseek-ai/cordis` 4.0.2→4.0.4、`@deepseek-ai/schemastery` 3.18.2→3.18.4（volatile 支持随此线）。
