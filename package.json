@@ -26,6 +26,7 @@
   },
   "files": [
     "lib",
+    "scripts",
     "cordis.patch.yml",
     "src",
     "skills",
@@ -37,7 +38,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "pretest": "npm run build",
     "prepare": "npm run build",
-    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs",
+    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs && node test/packaged-install.test.mjs",
     "smoke": "node scripts/smoke-boot.mjs",
     "postinstall": "node scripts/link-dsh-closure.mjs"
   },

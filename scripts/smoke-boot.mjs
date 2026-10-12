@@ -5,7 +5,11 @@
 //   1. npm pack the repo → tarball
 //   2. scratch $DSH_HOME/profiles/smoke with the plugin as a file: dep and a
 //      dsh.profile.bundles entry (same shape as the user's real profiles)
-//   3. pnpm install
+//   3. npm install — lifecycle scripts ON, i.e. the consumer path. pnpm ≥10
+//      blocks dependency lifecycle scripts by default, which is exactly how
+//      the #2-class tarball breakage (postinstall → unshipped file) stayed
+//      invisible to every pnpm-based install; npm-class clients (the desktop
+//      plugin manager) are the ones that run it.
 //   4. `dsh --profile smoke --dump-config` must compose the plugin into the
 //      tree (mount/patch-layer proof)
 //   5. a real boot under a timeout must load the plugin tree without a
@@ -34,7 +38,7 @@
 // removed on success.
 
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -62,7 +66,6 @@ const tarball = path.join(work, pack.stdout.trim().split('\n').at(-1))
 
 writeFileSync(path.join(profile, 'cordis.yml'), '# dsh profile root — empty; the tree is composed from the bundle patches\n[]\n')
 writeFileSync(path.join(profile, 'cordis.patch.yml'), '# scratch smoke profile: no extra patch layer\n[]\n')
-writeFileSync(path.join(profile, 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n')
 writeFileSync(path.join(profile, 'package.json'), JSON.stringify({
   name: 'dsh-profile-smoke',
   private: true,
@@ -93,8 +96,16 @@ dsh-llm-proxy:
       proxy: "http://127.0.0.1:1"
 `)
 
-const install = spawnSync('pnpm', ['install'], { cwd: profile, encoding: 'utf8' })
-if (install.status !== 0 || install.error) fail('pnpm install in the scratch profile failed', `${install.stdout}\n${install.stderr}`)
+const install = spawnSync('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: profile, encoding: 'utf8' })
+if (install.status !== 0 || install.error) fail('npm install in the scratch profile failed (lifecycle scripts on — the consumer path)', `${install.stdout}\n${install.stderr}`)
+
+// Consumer stand-down: the linker must not materialize a @deepseek-ai scope
+// dir inside the installed package's own tree (that would shadow the host's
+// bundled closure — the failure mode the optional-peer contract exists for).
+const installedOwn = path.join(profile, 'node_modules', ownName)
+if (existsSync(path.join(installedOwn, 'node_modules', '@deepseek-ai'))) {
+  fail('the closure linker ran inside the consumer profile — it must stand down outside the repo')
+}
 
 const dshEnv = { ...process.env, DSH_HOME: home }
 
