@@ -96,6 +96,14 @@ dsh-llm-proxy:
       proxy: "http://127.0.0.1:1"
 `)
 
+// Peers must not auto-install into the scratch profile: npm 7+ would resolve
+// our `^0.2.0-rc.2`-style peer floors to the old tower and shadow the host
+// closure under it (rows seeded from the shadow then fail the rc.2 compat
+// preflight) — the failure mode the optional-peer contract exists for.
+// Lifecycle scripts stay ON below (the consumer-path regression this install
+// is here for).
+writeFileSync(path.join(profile, '.npmrc'), 'legacy-peer-deps=true\n')
+
 const install = spawnSync('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: profile, encoding: 'utf8' })
 if (install.status !== 0 || install.error) fail('npm install in the scratch profile failed (lifecycle scripts on — the consumer path)', `${install.stdout}\n${install.stderr}`)
 
