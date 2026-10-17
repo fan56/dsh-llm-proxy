@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **The published tarball is npm-installable** — `postinstall` runs `node scripts/link-dsh-closure.mjs`, but the `files` allow-list never shipped `scripts/`, so every non-link install (plugin manager, plain `npm install`) died in the lifecycle step with `MODULE_NOT_FOUND` — the same defect class as fan56/dsh-subagent-registry#2. `scripts/` now ships, and the linker's stand-down guard swapped the fragile marker check for `tsconfig.json` + `.git`. `test/packaged-install.test.mjs` packs, installs the tarball under npm with lifecycle scripts on, and asserts the linker stood down; the boot smoke installs via npm for the same reason and asserts the stand-down against the real host.
+- **Fresh `npm install` of the published tarball resolves again** — the upstream 0.2.1-rc.1 companion wave (2026-10-16/17: `cordis-plugin-loader@1.0.6`, `schemastery@3.18.5`, both non-prerelease) floats into rc.2-based consumer trees via cordis's `^1.0.3` loader range and clashes with the exact `3.18.4`/`4.0.4` peers — npm ERESOLVE, the published package was uninstallable since 10-17. Peer ranges widen to `^4.0.4` / `^3.18.4` (devDeps stay pinned exact).
 
 
 ### Changed
