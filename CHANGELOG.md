@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Fresh `npm install` of the published tarball resolves again** — the upstream 0.2.1-rc.1 companion wave (2026-10-16/17: `cordis-plugin-loader@1.0.6`, `schemastery@3.18.5`, both non-prerelease) floats into rc.2-based consumer trees via cordis's `^1.0.3` loader range and clashes with the exact `3.18.4`/`4.0.4` peers — npm ERESOLVE, the published package was uninstallable since 10-17. Peer ranges widen to `^4.0.4` / `^3.18.4` (devDeps stay pinned exact).
+- **The publish gate's bare install is self-contained again** — `dsh-skill` loads its peer `@deepseek-ai/dsh-scope` at runtime, and under the family `.npmrc` (`legacy-peer-deps=true`) a plain `npm install` (what the publish gate runs) no longer auto-installs peers, so the gate died with `ERR_MODULE_NOT_FOUND` before publishing (main CI stayed green — its closure install provides the peer). `dsh-scope` is now declared in devDependencies, same shape as dsh-subagent-registry 0.14.0.
 
 ### Changed
 
