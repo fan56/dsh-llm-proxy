@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-10-20
+
+### Fixed
+
+- **npm-class profile installs no longer drag the old 0.2.0 companion tower on 0.2.1 hosts** — the `@deepseek-ai/dsh-settings` peer was the only `@deepseek-ai/*` peer without `optional: true` in `peerDependenciesMeta`, so npm 7+ auto-installed it (resolving to `0.2.0-rc.2`, the current stable dist-tag), whose exact `0.2.0-rc.2` dependencies (`dsh-brand`/`dsh-session`/`dsh-invariants`) then shadowed the host closure and got the bundled rows disabled by the 0.2.1 compat preflight ("1 required plugin did not activate" — caught by the dsh-subagent-registry weekly install suite, 2026-10-19 run). `dsh-settings` joins `cordis`/`dsh-skill`/`schemastery` as an optional peer: the host provides it, the declaration stays as the compat surface. No source changes.
+
 ## [0.7.2] - 2026-10-18
 
 ### Fixed
