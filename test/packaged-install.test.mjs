@@ -8,8 +8,8 @@
 // the tarball itself carries no preinstall/install/postinstall hook.
 // Run: node test/packaged-install.test.mjs  (after `npm run build`)
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -22,16 +22,19 @@ if (!existsSync(join(repoRoot, 'lib', 'index.js'))) {
 
 const scratch = mkdtempSync(join(tmpdir(), 'registry-packaged-install-'))
 try {
-  // 1. Pack from the repo the way CI's release job does. --ignore-scripts
-  //    keeps the root `prepare` chain from writing to stdout and corrupting
-  //    the --json output (the build gate already produced lib/).
-  const packed = JSON.parse(
-    execFileSync('npm', ['pack', '--json', '--pack-destination', scratch, '--ignore-scripts'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    }),
-  )[0]
-  const tarball = join(scratch, packed.filename)
+  // 1. Pack from the repo the way CI's release job does. npm < 11 runs the
+  //    root `prepare` chain during `npm pack` even with --ignore-scripts, and
+  //    its output lands on stdout — so do not parse `npm pack --json`; locate
+  //    the tarball in the destination dir instead (the build gate already
+  //    produced lib/).
+  const pack = spawnSync('npm', ['pack', '--pack-destination', scratch, '--ignore-scripts'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+  assert.equal(pack.status, 0, `npm pack failed:\n${pack.stdout}\n${pack.stderr}`)
+  const tarballName = readdirSync(scratch).find((f) => f.endsWith('.tgz'))
+  assert.ok(tarballName, 'npm pack produced a tarball')
+  const tarball = join(scratch, tarballName)
 
   // 2. Tarball contents: the install-hook target ships; the guard markers do not.
   const contents = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' }).split('\n')
