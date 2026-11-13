@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **npm packaged upgrade regression test** (`test/packaged-upgrade.test.mjs`) — installs the published baseline release and upgrades it to the locally packed tarball, asserting the published manifest carries no `preinstall`/`install`/`postinstall` hook, that the upgrade emits no pnpm 11 unapproved-build report, and that the bundle patch and plugin entry still ship — the npm upgrade path regression for pnpm 11 `strictDepBuilds` (see dsh-subagent-registry#10).
+
 ## [0.8.1] - 2026-11-13
 
 ### Fixed

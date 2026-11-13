@@ -38,7 +38,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "pretest": "npm run build",
     "prepare": "node scripts/link-dsh-closure.mjs && npm run build",
-    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs && node test/packaged-install.test.mjs",
+    "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs && node test/packaged-install.test.mjs && node test/packaged-upgrade.test.mjs",
     "smoke": "node scripts/smoke-boot.mjs"
   },
   "dependencies": {
