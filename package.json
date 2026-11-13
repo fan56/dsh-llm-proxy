@@ -1,6 +1,6 @@
 {
   "name": "@aiwayds/dsh-llm-proxy",
-  "version": "0.3.1",
+  "version": "0.8.1",
   "description": "dsh plugin: SYSTEM proxy (env) + LLM traffic-splitting proxy via a process-global undici routing dispatcher",
   "type": "module",
   "main": "lib/index.js",
@@ -37,10 +37,9 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "pretest": "npm run build",
-    "prepare": "npm run build",
+    "prepare": "node scripts/link-dsh-closure.mjs && npm run build",
     "test": "node --test test/match.test.mjs test/router.test.mjs test/config.test.mjs test/skill.test.mjs test/dispose.test.mjs test/e2e.test.mjs && node test/packaged-install.test.mjs",
-    "smoke": "node scripts/smoke-boot.mjs",
-    "postinstall": "node scripts/link-dsh-closure.mjs"
+    "smoke": "node scripts/smoke-boot.mjs"
   },
   "dependencies": {
     "undici": "8.9.0"

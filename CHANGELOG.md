@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.8.1] - 2026-11-13
+
+### Fixed
+
+- **The published package no longer ships an install lifecycle hook — `postinstall` was merged into the root `prepare` chain — so pnpm 11 updates stop failing with `ERR_PNPM_IGNORED_BUILDS` (see dsh-subagent-registry#10).** pnpm 11 defaults to `strictDepBuilds`: installing a dependency that declares an unapproved `preinstall`/`install`/`postinstall` exits non-zero, and the dsh host plugin manager rolls the update back — with the previous `postinstall` every update of this plugin failed that way. npm and pnpm never run `prepare` for registry dependencies, and pnpm's gate set is exactly those three install hooks, so the published manifest is now hook-free while dev closure linking still runs from the root `prepare` hook (`node scripts/link-dsh-closure.mjs && npm run build`). The linker's stand-down guard also exits when `INIT_CWD` is set and is not the repo root, covering npm's throwaway-clone `prepare` runs for git dependencies and subdirectory root installs.
 
 ### Changed
 
